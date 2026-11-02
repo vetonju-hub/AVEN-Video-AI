@@ -1,0 +1,24 @@
+name: AVEN Video AI - Intel Mac Installationsdatei
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+jobs:
+  build:
+    name: DMG für Intel-Mac erstellen
+    runs-on: macos-26-intel
+    permissions:
+      contents: read
+    steps:
+      - name: Projektdateien abrufen
+        uses: actions/checkout@v4
+      - name: Programme bauen und DMG erstellen
+        run: bash scripts/build_macos.sh
+      - name: Installationsdatei zum Download bereitstellen
+        uses: actions/upload-artifact@v4
+        with:
+          name: AVEN-Video-AI-Intel-Installer
+          path: dist/AVEN_Video_AI_Intel.dmg
+          if-no-files-found: error
+          retention-days: 30
