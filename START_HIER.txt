@@ -1,39 +1,11 @@
-AVEN Video AI – native Mac-Neuentwicklung
-=========================================
+AVEN VIDEO AI v3 — Adaptive Realism
 
-WICHTIG: Das ZIP enthält den neuen Quellcode, nicht die bereits kompilierte DMG.
-Es gibt KEINE .command-Installation und KEIN Python/PyTorch.
+1) ZIP entpacken.
+2) INSTALLATION_DEUTSCH.md öffnen.
+3) Via GitHub Desktop dein bestehendes Repository aktualisieren.
+4) GitHub Actions -> grüner Intel-Build -> DMG herunterladen.
+5) App nach Programme ziehen, öffnen, Modelle einmalig herunterladen.
+6) Realismus von 1 bis 10 wählen; mit kurzem KI-Test beginnen.
 
-Installationsdatei OHNE Terminal erzeugen:
-
-1. github.com im Browser öffnen und kostenlos anmelden.
-2. Ein neues Repository namens AVEN-Video-AI erstellen.
-3. Die ENTpackten Projektdateien (einschließlich des versteckten Ordners
-   .github) über "Add file" -> "Upload files" hochladen.
-   Im macOS Finder mit CMD+SHIFT+. versteckte Dateien einblenden.
-4. Änderungen mit "Commit changes" speichern.
-5. Reiter "Actions" öffnen, den Intel-Mac-Build auswählen und warten,
-   bis er erfolgreich (grüner Haken) abgeschlossen ist.
-6. Workflow-Lauf anklicken und unten unter "Artifacts" den
-   AVEN-Video-AI-Intel-Installer herunterladen.
-7. Das heruntergeladene ZIP entpacken, die DMG öffnen, dann
-   AVEN Video AI.app nach "Programme" ziehen.
-8. Bei Sicherheitswarnung: Systemeinstellungen -> Datenschutz & Sicherheit
-   -> "Dennoch öffnen". Niemals den Gatekeeper global deaktivieren.
-
-Genaue Anleitung in INSTALLATION_DEUTSCH.md
-
-Funktionen:
-- Bilder in mehreren Szenen animieren
-- Animierte Grafik-Titelvideos auch ohne Bilder
-- Musikdatei in ein MP4-Video mischen
-- 16:9 / 9:16 / 1:1, Länge 5 bis 240 Sekunden, 12 fps
-- Lokale KI-Motiverkennung per Apple Vision
-- 100% offline und keine Gebühren bei der Nutzung
-
-EINSCHRÄNKUNG: Keine generative Text-zu-Video- oder Bild-zu-Video-KI.
-Die Filmsequenzen entstehen durch Motion-Effekte aus vorhandenen Bildern.
-Nur die Bildklassifizierung verwendet echte, lokale ML-Modelle.
-
-Die App ist eine neue native SwiftUI-Implementierung, kein Update der
-fehlerhaften Python-Version. Sie wurde hier nicht auf macOS kompiliert.
+Dies ist das PROJECT ZIP, nicht die fertige DMG.
+Für echte Offline-KI sind große Modelldateien erforderlich.

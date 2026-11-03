@@ -1,24 +1,36 @@
-name: AVEN Video AI - Intel Mac Installationsdatei
+name: AVEN v3 - Adaptive Realism Intel und Apple Silicon
 on:
   push:
     branches: [main]
   workflow_dispatch:
 
+permissions:
+  contents: read
+
 jobs:
   build:
-    name: DMG für Intel-Mac erstellen
-    runs-on: macos-26-intel
-    permissions:
-      contents: read
+    name: Mac-App und KI-Engine (${{ matrix.arch }})
+    runs-on: ${{ matrix.runner }}
+    timeout-minutes: 120
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - arch: x86_64
+            runner: macos-26-intel
+          - arch: arm64
+            runner: macos-26
     steps:
-      - name: Projektdateien abrufen
+      - name: Projektdateien holen
         uses: actions/checkout@v4
-      - name: Programme bauen und DMG erstellen
+      - name: Logiktests auf echtem macOS ausführen
+        run: bash tests/test_on_mac.sh
+      - name: Native App und KI-Engine kompilieren
         run: bash scripts/build_macos.sh
-      - name: Installationsdatei zum Download bereitstellen
+      - name: Installer bereitstellen
         uses: actions/upload-artifact@v4
         with:
-          name: AVEN-Video-AI-Intel-Installer
-          path: dist/AVEN_Video_AI_Intel.dmg
+          name: AVEN-v3-${{ matrix.arch }}-Mac-Installer
+          path: dist/AVEN_Video_AI_v3_${{ matrix.arch }}.dmg
           if-no-files-found: error
           retention-days: 30

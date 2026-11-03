@@ -1,119 +1,54 @@
-# AVEN Video AI — Schritt für Schritt installieren
+# AVEN Video AI v3 — Installation ohne Terminal (Intel & Apple Silicon)
 
-**Für deinen Mac:** MacBook Pro 16 Zoll (2019), Intel i9, 16 GB RAM, macOS Tahoe 26.5.
+## Wichtig vorab
 
-## Das Wichtigste zuerst
+Das ZIP ist **der Quellcode**, nicht die fertige `.app`. Da der Build nur auf macOS erfolgen kann, erzeugt GitHub Actions für dich eine echte `.dmg`-Installationsdatei. Die **erste KI-Generierung auf Intel i9 mit 16 GB RAM ist experimentell** und kann sehr viel Zeit benötigen oder an RAM scheitern.
 
-- Das Projekt ist **komplett neu in Swift/SwiftUI** geschrieben, nicht in Python.
-- Die ZIP-Datei, die du von ChatGPT erhältst, ist ein **Quellcode-Paket**. Sie ist **noch keine bereits kompilierte Mac-App**.
-- Damit du später AVEN wie Firefox installieren kannst, baut ein kostenloser **GitHub-Actions-Intel-Mac** daraus eine `.dmg`-Installationsdatei.
-- **Du musst dafür auf deinem Mac keinen Terminalbefehl eingeben.**
-- Du brauchst für diesen einmaligen Online-Build einen GitHub-Account und Internet. Nach dem Download funktioniert die App selbst **offline**.
-- Die `.dmg` ist **nicht von Apple notarisiert**. Daher kann eine einmalige Sicherheitsfreigabe erforderlich sein.
+## A. Bestehendes GitHub-Projekt aktualisieren
 
-## A. App-Datei ohne Terminal erstellen
+Du hast bereits das GitHub-Repository `vetonju-hub/AVEN-Video-AI`.
 
-### 1. ZIP entpacken
+**Ohne Terminal mit GitHub Desktop:**
 
-1. `AVEN_Video_AI_Neustart.zip` herunterladen.
-2. Im Ordner **Downloads** die ZIP-Datei doppelklicken.
-3. Im entpackten Ordner findest du z. B. `Sources`, `Assets`, `scripts`, `Info.plist` und diese Anleitung.
-4. Drücke im Finder **⌘ + ⇧ + .** (Command + Shift + Punkt), damit auch der versteckte Ordner **`.github`** sichtbar ist.
+1. Öffne https://desktop.github.com/ und installiere GitHub Desktop.
+2. Melde dich mit deinem GitHub-Konto an.
+3. File → Clone repository → `AVEN-Video-AI` → Clone.
+4. Entpacke `AVEN_Video_AI_v3_Adaptive_Realism_Projekt.zip` in Downloads.
+5. Öffne in GitHub Desktop Repository → Show in Finder.
+6. Kopiere den **Inhalt** des entpackten v3-Ordners (`Sources`, `scripts`, `Assets`, `.github`, `Info.plist`, `README.md` usw.) in den soeben geöffneten geklonten Repository-Ordner; vorhandene Projektdateien ersetzen/Ordner zusammenführen.
+7. **Nicht** den Git-Versionsordner `.git` verändern. Der versteckte Ordner `.github` muss mitkommen; Finder zeigt ihn mit `⌘⇧.` an.
+8. In GitHub Desktop alle Änderungen kontrollieren; links unten als Summary `AVEN v3 Adaptive Realism` eingeben → **Commit to main** → **Push origin**.
+9. Öffne https://github.com/vetonju-hub/AVEN-Video-AI/actions.
 
-### 2. Kostenloses GitHub-Repository erstellen
+**Alternative per Browser:** Lade einzelne Projektdateien in der richtigen Unterordner-Struktur hoch und ersetze gleichnamige Dateien. Bei `.github/workflows/build-macos.yml` muss der Dateipfad genauso bleiben.
 
-1. Öffne **https://github.com/new** in Safari.
-2. Melde dich an oder registriere einen kostenlosen GitHub-Account.
-3. Als Repository-Namen `AVEN-Video-AI` eingeben.
-4. Wähle **Public** nur, wenn dein Code öffentlich sein darf. Für öffentliche Repositories ist die Standard-Build-Nutzung von GitHub Actions kostenlos. Private Repositories können innerhalb des inkludierten Minutenkontingents funktionieren; zusätzliche Kosten sind möglich.
-5. **NICHT** „Add a README file“ aktivieren.
-6. Klicke auf **Create repository**.
+## B. Installationsdatei herunterladen
 
-### 3. Projekt hochladen
+1. In GitHub → **Actions** den neuesten Eintrag `AVEN v3 - Adaptive Realism Intel und Apple Silicon` öffnen.
+2. Der Build wird für zwei Architekturen gestartet. Prüfe, ob der jeweilige Job einen **grünen Haken** hat.
+3. Für das MacBook Pro 2019 (Intel) unten unter **Artifacts** auf `AVEN-v3-x86_64-Mac-Installer` klicken.
+4. Das heruntergeladene ZIP entpacken. `AVEN_Video_AI_v3_x86_64.dmg` doppelklicken.
+5. `AVEN Video AI.app` per Maus in den Ordner **Programme** ziehen.
+6. `AVEN Video AI.app` in **Programme** öffnen. Wenn macOS die unsignierte App blockiert: Systemeinstellungen → Datenschutz & Sicherheit → dennoch öffnen, **nur wenn du deinem selbstgebauten App-Artefakt vertraust**. Nicht die allgemeine Sicherheit deaktivieren.
 
-1. Auf der neuen Repository-Seite findest du den Link **uploading an existing file**. Alternativ: **Add file → Upload files**.
-2. Ziehe den Inhalt des entpackten Ordners in die Uploadfläche. Es müssen **alle Projektdateien und Unterordner** dabei sein, insbesondere `.github/workflows/build-macos.yml`, `Sources/`, `scripts/`, `Assets/` und `Info.plist`.
-3. Kontrolliere in der Vorschau die Dateipfade. Falls `.github/workflows/build-macos.yml` fehlt, füge die Datei noch hinzu. Der automatische Build startet sonst nicht.
-4. Klicke unten auf **Commit changes**.
+Für neuere Apple-Silicon-Macs nimm entsprechend `AVEN-v3-arm64-Mac-Installer`.
 
-### 4. Mac-Installationsdatei bauen lassen
+**Wenn der Job rot ist:** Nicht installieren. Öffne den roten Job, kopiere die erste Fehlermeldung aus dem Build-Protokoll und sende sie zur Fehlerbehebung. Ein grüner CI-Build ersetzt keinen echten KI-Render-Test.
 
-1. Öffne in deinem Repository oben den Tab **Actions**.
-2. Falls GitHub nach einer Freigabe für Workflows fragt, aktiviere die Workflows für dieses Repository.
-3. Wähle **AVEN Video AI - Intel Mac Installationsdatei**.
-4. Normalerweise läuft der Build nach dem Hochladen automatisch. Alternativ kannst du **Run workflow → Run workflow** wählen.
-5. Öffne den neuesten Durchlauf und prüfe, ob der Build mit einem **grünen Haken** abgeschlossen ist.
-6. Ganz unten im Durchlauf findest du unter **Artifacts** den Download **AVEN-Video-AI-Intel-Installer**.
-7. Lade ihn herunter. Du erhältst eine ZIP-Datei. Entpacke diese. Darin befindet sich `AVEN_Video_AI_Intel.dmg`.
+## C. Erstes echtes KI-Video erstellen
 
-**Hinweis:** Wenn der Build rot fehlschlägt, existiert keine funktionierende `.dmg`. Öffne die Fehlerdetails und verwende die darin angezeigte Fehlermeldung zur Korrektur. Der Quellcode wurde außerhalb eines Macs entwickelt und ist noch nicht auf deinem Gerät getestet.
+1. Starte AVEN. Im KI-Bereich steht deine erkannte Hardware.
+2. Gib einen englischen Prompt ein, z. B.: `A singer wearing a black jacket slowly turns toward camera, subtle natural head motion, cinematic moonlight, realistic face.`
+3. Optional **Bilder hinzufügen** und **Erstes Bild als Referenz verwenden** aktivieren.
+4. **Realismusstufe 2–3** und eine sehr kurze Gesamtdauer (2–4 Sekunden) für den ersten Test verwenden.
+5. Klicke **Kostenlose KI-Modelle herunterladen**. Rund 4,5 GB Daten müssen einmalig geladen werden. Danach ist die Berechnung offline. Die KI-Engine liegt bereits in der App.
+6. Klicke **ECHTES KI-VIDEO GENERIEREN**. AVEN erstellt `~/Movies/AVEN Video AI/KI Aufträge/Job-...` und speichert jede erzeugte Szene separat.
+7. Wenn der erste Test klappt, erhöhe den Regler auf 5, dann 8, dann 10. Es gibt keine Qualitätsgarantie. Bei Speichermangel niedrigere Stufe verwenden.
+8. Für mehrminütige Videos Dauer auf bis zu 240 Sekunden setzen; AVEN generiert viele Clips nacheinander und fügt sie zusammen.
+9. Bei Unterbrechung **Letzten Auftrag fortsetzen** drücken. Erstellte Szenen werden nicht neu berechnet.
 
-## B. AVEN normal auf dem Mac installieren
+**Nicht verwechseln:** `MP4-Video erstellen` ist der bisherige Bild-Animator. Der Button **ECHTES KI-VIDEO GENERIEREN** startet das neuronale Videomodell.
 
-1. Doppelklicke auf `AVEN_Video_AI_Intel.dmg`.
-2. Ein Fenster mit `AVEN Video AI.app` und einer Verknüpfung zum Ordner **Programme** öffnet sich.
-3. Ziehe `AVEN Video AI.app` auf **Programme**.
-4. Öffne **Finder → Programme**.
-5. Doppelklicke auf **AVEN Video AI**.
+## Hardwaregrenzen
 
-### Falls Apple den Start blockiert
-
-Diese Version ist nicht mit einer kostenpflichtigen Apple-Developer-ID signiert und nicht von Apple notarisiert.
-
-1. Starte AVEN einmal (Sicherheitsmeldung erscheint).
-2. Öffne **Apple-Menü → Systemeinstellungen → Datenschutz & Sicherheit**.
-3. Scrolle bis zum Hinweis über die blockierte App.
-4. Wähle **Dennoch öffnen** und bestätige deine Entscheidung.
-5. Starte AVEN nochmals.
-
-**Deaktiviere Gatekeeper nicht global**. Diese Freigabe nur bei Dateien verwenden, deren Herkunft und Inhalt du geprüft hast.
-
-## C. Dein erstes Video erstellen
-
-1. Starte **AVEN Video AI** über den Ordner **Programme**.
-2. Schreibe einen **Projekttitel** und optional eine Stimmung. Die Beschreibung wählt bei Titelvideos die Hintergrundfarbe, erzeugt aber **keine generativen KI-Szenen**.
-3. Klicke auf **Bilder hinzufügen** und wähle mehrere Fotos.
-4. Wähle **16:9** für YouTube, **9:16** für Shorts/Reels oder **1:1** für quadratische Videos.
-5. Stelle die Länge über den Regler auf **5 bis 240 Sekunden**.
-6. Optional auf **Musik hinzufügen** klicken und eine Audiodatei auswählen.
-7. Optional **KI-Motiverkennung** klicken. Apples Vision analysiert das erste Bild lokal.
-8. **MP4-Video erstellen** anklicken, Zielort auswählen und auf Fertigstellung warten.
-9. **Im Finder anzeigen** öffnet die fertige MP4-Datei.
-
-Die Szene jedes Fotos wird mit einem leichten Zoom und Kameraschwenk animiert. Benachbarte Bilder erhalten Überblendungen. Wenn du keine Bilder auswählst, entsteht ein animierter Farb-/Titelclip.
-
-## D. Technische Eigenschaften
-
-| Eigenschaft | Wert |
-| --- | --- |
-| Zielplattform | Intel-Mac, x86_64 |
-| macOS | 14+ (unter Tahoe 26.5 vorgesehen) |
-| Laufzeit | native SwiftUI / Apple AVFoundation |
-| Python / pip / PyTorch | **nicht erforderlich** |
-| Ausgabe | `.mp4` mit H.264 |
-| Videoformat | 16:9, 9:16, 1:1 |
-| Standardauflösung | 960×540 / 540×960 / 720×720 |
-| Bildrate | 12 fps |
-| Maximale Länge | 240 Sekunden |
-| Musik | optional MP3 / M4A / WAV / AIFF, wird bei Bedarf geloopt |
-| Lokale KI-Funktion | Apples Vision-Motiverkennung (ML-Klassifizierung) |
-| Internet während Nutzung | nein |
-
-## E. Ehrliche Grenzen
-
-- **Keine echte generative Text-zu-Video-KI:** Diese erste native Version rendert Bildanimationen, Titelkarten und Musikvideos. Sie generiert nicht neue realistische Personen, Aktionen oder Szenen aus einem Textprompt.
-- Die Bezeichnung Video AI bezieht sich in dieser Version auf die eingebaute lokale Vision-Bildanalyse. Ein generatives Videomodell ist nicht enthalten.
-- Auf dem Intel-i9-Mac mit 16 GB RAM wäre die vierminütige Videoerzeugung mit großen aktuellen Videodiffusionsmodellen sehr langsam und oft nicht innerhalb des RAM-Limits möglich.
-- Die Projektdateien sind auf Swift-Syntax geprüft; ein echter macOS-Build und ein Start auf deinem Computer können hier nicht vorgetäuscht werden. GitHub Actions macht einen echten Build und zeigt mögliche Compilerfehler.
-
-## F. Hilfe bei Fehlermeldungen
-
-**Actions zeigt keinen Workflow:** Prüfe, ob im GitHub-Repository die Datei `.github/workflows/build-macos.yml` vorhanden ist und ob Workflows aktiviert sind.
-
-**Build ist rot:** Öffne Actions → Build-Lauf → `DMG für Intel-Mac erstellen` → `Programme bauen und DMG erstellen`. Kopiere die erste Fehlermeldung für die Fehlerbehebung.
-
-**macOS blockiert die App:** Verwende die Freigabe unter Datenschutz & Sicherheit wie oben erklärt, nicht `sudo` oder globale Sicherheitsabschaltungen.
-
-**Video startet, aber ohne Musik:** Prüfe, ob deine Audiodatei abspielbar ist. Die App verwendet AVFoundation, das manche exotischen Formate nicht unterstützt.
-
-**Videoexport dauert lange:** Reduziere die Länge und verwende zunächst 2–3 Bilder. Für 4 Minuten verarbeitet dein Mac 2880 Frames bei 12 fps.
+Auf einem Intel i9 mit 16 GB RAM findet die KI-Berechnung ausschließlich auf der CPU statt. Das kann extrem langsam sein und manche Einstellungen können durch RAM-Limits scheitern. Mehr Zeit allein kann fehlenden Arbeitsspeicher nicht ersetzen. Die Stufe 10 bedeutet „höchster unterstützter Rechenaufwand“, nicht Nano-Banana-/Veo-Qualität.
