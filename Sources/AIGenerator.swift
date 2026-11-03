@@ -3,6 +3,7 @@ import AppKit
 import SwiftUI
 import AVFoundation
 import UniformTypeIdentifiers
+import CryptoKit
 
 /// Genuine local Wan VACE video diffusion; only downloading weights ever uses the network.
 /// Frames are rendered by the bundled open-source sd-cli engine, never synthesized by zooming photos.
@@ -21,20 +22,34 @@ final class AVENLocalAI: NSObject, ObservableObject, URLSessionDownloadDelegate 
         let source: String
         let minimumBytes: Int64
         let exactBytes: Int64?
-        init(name: String, source: String, minimumBytes: Int64, exactBytes: Int64? = nil) {
+        let expectedSHA256: String?
+        let requiredTensor: String?
+        init(name: String, source: String, minimumBytes: Int64,
+             exactBytes: Int64? = nil, expectedSHA256: String? = nil,
+             requiredTensor: String? = nil) {
             self.name = name
             self.source = source
             self.minimumBytes = minimumBytes
             self.exactBytes = exactBytes
+            self.expectedSHA256 = expectedSHA256
+            self.requiredTensor = requiredTensor
         }
     }
-    // Source filenames confirmed against official hosting repositories. Size checks detect HTTP error documents.
-    private let q4 = Weight(name: "wan2.1-vace-1.3b-q4_0.gguf",
-        source: "https://huggingface.co/calcuis/wan-1.3b-gguf/resolve/main/wan2.1-vace-1.3b-q4_0.gguf",
-        minimumBytes: 1_000_000_000, exactBytes: 1_345_134_272)
-    private let q8 = Weight(name: "wan2.1-vace-1.3b-q8_0.gguf",
-        source: "https://huggingface.co/calcuis/wan-1.3b-gguf/resolve/main/wan2.1-vace-1.3b-q8_0.gguf",
-        minimumBytes: 2_000_000_000)
+    // GGUF variant V3 includes the VACE patch-embedding tensor required by
+    // stable-diffusion.cpp. The older v1 GGUF had 1263 tensors and caused
+    // "model.diffusion_model.vace_patch_embedding.weight not in model metadata".
+    // New filenames preserve the old downloaded model for safe rollback.
+    // Source SHA256 values were published on the Hugging Face file pages.
+    private let q4 = Weight(name: "wan2.1-v3-vace-1.3b-q4_0.gguf",
+        source: "https://huggingface.co/calcuis/wan-1.3b-gguf/resolve/main/wan2.1-v3-vace-1.3b-q4_0.gguf",
+        minimumBytes: 1_250_000_000,
+        expectedSHA256: "c9d2ad33427cef0e485c0c32b105c3cca8a33f6bfd8249b41b9685756aed4a74",
+        requiredTensor: "vace_patch_embedding.weight")
+    private let q8 = Weight(name: "wan2.1-v3-vace-1.3b-q8_0.gguf",
+        source: "https://huggingface.co/calcuis/wan-1.3b-gguf/resolve/main/wan2.1-v3-vace-1.3b-q8_0.gguf",
+        minimumBytes: 2_000_000_000,
+        expectedSHA256: "ac0dcf0f1dd271352be972ce4b425e994a061cc0c650410dcd8d9fdf7f4940dc",
+        requiredTensor: "vace_patch_embedding.weight")
     private let t5Q3 = Weight(name: "umt5-xxl-encoder-Q3_K_S.gguf",
         source: "https://huggingface.co/city96/umt5-xxl-encoder-gguf/resolve/main/umt5-xxl-encoder-Q3_K_S.gguf",
         minimumBytes: 2_000_000_000, exactBytes: 2_858_489_696)
@@ -81,10 +96,42 @@ final class AVENLocalAI: NSObject, ObservableObject, URLSessionDownloadDelegate 
         return (try? FileManager.default.attributesOfItem(atPath: url.path)[.size] as? NSNumber)?.int64Value ?? 0
     }
 
+    /// Fast GGUF header preflight. This is NOT a full model-inference test;
+    /// it prevents a known-invalid VACE checkpoint from being selected.
+    private func headerContainsRequiredTensor(_ url: URL, name: String?) -> Bool {
+        guard let name = name else { return true }
+        guard let reader = try? FileHandle(forReadingFrom: url) else { return false }
+        defer { try? reader.close() }
+        guard let header = try? reader.read(upToCount: 8 * 1024 * 1024),
+              header.starts(with: [0x47, 0x47, 0x55, 0x46]) else { return false }
+        return header.range(of: Data(name.utf8)) != nil
+    }
+
+    /// Full checksum of downloaded V3 GGUF, performed only after downloading.
+    /// Stream data in chunks instead of loading gigabytes into RAM.
+    private func verifyDownloadedChecksum(_ url: URL, expected: String?) throws -> Bool {
+        guard let expected = expected else { return true }
+        let reader = try FileHandle(forReadingFrom: url)
+        defer { try? reader.close() }
+        var checksum = SHA256()
+        while true {
+            let chunk = try reader.read(upToCount: 4 * 1024 * 1024) ?? Data()
+            if chunk.isEmpty { break }
+            checksum.update(data: chunk)
+        }
+        let actual = checksum.finalize().map { String(format: "%02x", $0) }.joined()
+        return actual.lowercased() == expected.lowercased()
+    }
+
     private func ready(_ weight: Weight) -> Bool {
         let bytes = sizeOf(weight)
-        if let exact = weight.exactBytes { return bytes == exact }
-        return bytes >= weight.minimumBytes
+        if let exact = weight.exactBytes {
+            guard bytes == exact else { return false }
+        } else {
+            guard bytes >= weight.minimumBytes else { return false }
+        }
+        let modelURL = modelDirectory.appendingPathComponent(weight.name)
+        return headerContainsRequiredTensor(modelURL, name: weight.requiredTensor)
     }
 
     private func corruptModelDescription() -> String? {
@@ -92,7 +139,7 @@ final class AVENLocalAI: NSObject, ObservableObject, URLSessionDownloadDelegate 
             let bytes = sizeOf(weight)
             if bytes > 0 && !ready(weight) {
                 let expected = weight.exactBytes.map(String.init) ?? "mindestens \(weight.minimumBytes)"
-                return "Modell-Datei unvollständig oder verändert: \(weight.name) (\(bytes) statt \(expected) Bytes). Bitte im Modellordner nur diese Datei löschen und erneut über AVEN herunterladen."
+                return "Modelldatei ungültig: \(weight.name) (\(bytes) Bytes; erwartet \(expected) und gültige Tensor-Metadaten). Bitte diese Datei im Modellordner löschen und das V3-Modell erneut herunterladen."
             }
         }
         return nil
@@ -101,8 +148,13 @@ final class AVENLocalAI: NSObject, ObservableObject, URLSessionDownloadDelegate 
     func updateAvailability() {
         isReady = ready(q4) && ready(t5Q3) && ready(vae)
         highPrecisionReady = ready(q8) && ready(t5Q5) && ready(vae)
-        if isReady && !isGenerating && !isDownloading {
-            message = "Wan VACE Q4 einsatzbereit · KI-Berechnung erfolgt vollständig offline"
+        if !isGenerating && !isDownloading {
+            if isReady {
+                message = "Wan VACE V3 geprüft · Modellstart kann jetzt getestet werden (offline)"
+            } else if FileManager.default.fileExists(atPath:
+                modelDirectory.appendingPathComponent("wan2.1-vace-1.3b-q4_0.gguf").path) {
+                message = "Altes VACE-Modell erkannt (fehlender vace_patch_embedding-Tensor). Bitte über 'Kostenlose KI-Modelle herunterladen' das korrigierte V3-Modell laden. Die alten Dateien bleiben erhalten."
+            }
         }
     }
 
@@ -167,6 +219,14 @@ final class AVENLocalAI: NSObject, ObservableObject, URLSessionDownloadDelegate 
             let bytes = (try FileManager.default.attributesOfItem(atPath: location.path)[.size] as? NSNumber)?.int64Value ?? 0
             guard (item.exactBytes.map { bytes == $0 } ?? (bytes >= item.minimumBytes)) else {
                 throw NSError(domain: "AVEN", code: 50, userInfo: [NSLocalizedDescriptionKey: "Modell ist unvollständig oder verändert: \(item.name) (\(bytes) Bytes)"])
+            }
+            guard headerContainsRequiredTensor(location, name: item.requiredTensor) else {
+                throw NSError(domain: "AVEN", code: 51, userInfo: [NSLocalizedDescriptionKey:
+                    "GGUF enthält den benötigten VACE-Tensor nicht: vace_patch_embedding.weight. Bitte die korrigierte V3-Version laden."])
+            }
+            guard try verifyDownloadedChecksum(location, expected: item.expectedSHA256) else {
+                throw NSError(domain: "AVEN", code: 52, userInfo: [NSLocalizedDescriptionKey:
+                    "SHA256 der Modelldatei stimmt nicht mit dem veröffentlichten Original überein: \(item.name)"])
             }
             let target = modelDirectory.appendingPathComponent(item.name)
             if FileManager.default.fileExists(atPath: target.path) { try FileManager.default.removeItem(at: target) }
@@ -284,6 +344,7 @@ final class AVENLocalAI: NSObject, ObservableObject, URLSessionDownloadDelegate 
         message = "KI Szene \(sceneNumber)/\(total) läuft. Vollständiges engine.log wird im Szenenordner gespeichert."
         let logURL = segmentFolder.appendingPathComponent("engine.log")
         let header = "AVEN KI Diagnose\nArchitektur: \(AVENHardware.detect().architecture), RAM: \(AVENHardware.detect().memoryGB) GB\n" +
+            "Modell: \(job.plan.useQ8 ? q8.name : q4.name)\n" +
             "Modellgroessen (Bytes): VACE=\(sizeOf(q4)), UMT5=\(sizeOf(t5Q3)), VAE=\(sizeOf(vae))\n" +
             "Backend=\(job.plan.backend), Aufloesung=\(job.plan.width)x\(job.plan.height), Frames=\(job.plan.frames)\n" +
             "Ausfuehrbare Datei: \(engine.path)\n--- CLI-Ausgabe ---\n"
