@@ -38,6 +38,7 @@ enum VideoRenderer {
 
     static func render(job: RenderJob, output: URL, cancellation: RenderCancellation,
                        progress: @escaping (Double) -> Void) throws {
+        _ = try VideoTiming.resolve(manual: job.duration, music: nil, matchMusic: false)
         let fileManager = FileManager.default
         let tempDir = fileManager.temporaryDirectory.appendingPathComponent("aven-\(UUID().uuidString)", isDirectory: true)
         try fileManager.createDirectory(at: tempDir, withIntermediateDirectories: true)
@@ -68,7 +69,7 @@ enum VideoRenderer {
         writer.add(input)
         guard writer.startWriting() else { throw VideoError.writerFailed(writer.error?.localizedDescription ?? "Unbekannter Fehler") }
         writer.startSession(atSourceTime: .zero)
-        let frames = max(1, Int(job.duration * Double(fps)))
+        let frames = try VideoTiming.frameCount(seconds: job.duration, fps: Int(fps))
         do {
             for frameIndex in 0..<frames {
                 if cancellation.isCancelled { throw VideoError.cancelled }
@@ -94,6 +95,7 @@ enum VideoRenderer {
             writer.cancelWriting()
             throw error
         }
+        writer.endSession(atSourceTime: CMTime(seconds: job.duration, preferredTimescale: 48_000))
         input.markAsFinished()
         let done = DispatchSemaphore(value: 0)
         writer.finishWriting { done.signal() }
@@ -105,7 +107,8 @@ enum VideoRenderer {
         progress(0.94)
         if let sound = job.soundtrack {
             let muxed = tempDir.appendingPathComponent("final.mp4")
-            try mergeMusic(video: silentVideo, sound: sound, output: muxed, duration: job.duration)
+            try AIFrameEncoder.combine(clips: [silentVideo], output: muxed, limit: job.duration,
+                soundtrack: sound, cancellation: cancellation)
             if cancellation.isCancelled { throw VideoError.cancelled }
             if fileManager.fileExists(atPath: output.path) { try fileManager.removeItem(at: output) }
             try fileManager.copyItem(at: muxed, to: output)
@@ -217,44 +220,4 @@ enum VideoRenderer {
         context.restoreGState()
     }
 
-    private static func mergeMusic(video: URL, sound: URL, output: URL, duration: Double) throws {
-        let composition = AVMutableComposition()
-        let videoAsset = AVURLAsset(url: video)
-        let soundAsset = AVURLAsset(url: sound)
-        let clipTime = CMTime(seconds: duration, preferredTimescale: 600)
-        guard let sourceVideoTrack = videoAsset.tracks(withMediaType: .video).first,
-              let videoTrack = composition.addMutableTrack(withMediaType: .video,
-                                                           preferredTrackID: kCMPersistentTrackID_Invalid) else {
-            throw VideoError.exportFailed("Videospur fehlt")
-        }
-        try videoTrack.insertTimeRange(CMTimeRange(start: .zero, duration: clipTime), of: sourceVideoTrack, at: .zero)
-        videoTrack.preferredTransform = sourceVideoTrack.preferredTransform
-        guard let sourceAudioTrack = soundAsset.tracks(withMediaType: .audio).first,
-              let audioTrack = composition.addMutableTrack(withMediaType: .audio,
-                                                           preferredTrackID: kCMPersistentTrackID_Invalid) else {
-            throw VideoError.audioMissing
-        }
-        let audioDuration = soundAsset.duration
-        guard audioDuration.isValid && CMTimeCompare(audioDuration, .zero) > 0 else { throw VideoError.audioMissing }
-        var cursor = CMTime.zero
-        while CMTimeCompare(cursor, clipTime) < 0 {
-            let remaining = CMTimeSubtract(clipTime, cursor)
-            let segment = CMTimeCompare(audioDuration, remaining) < 0 ? audioDuration : remaining
-            try audioTrack.insertTimeRange(CMTimeRange(start: .zero, duration: segment),
-                                           of: sourceAudioTrack, at: cursor)
-            cursor = CMTimeAdd(cursor, segment)
-        }
-        guard let exporter = AVAssetExportSession(asset: composition, presetName: AVAssetExportPresetHighestQuality) else {
-            throw VideoError.exportFailed("Export-Sitzung nicht verfügbar")
-        }
-        exporter.outputURL = output
-        exporter.outputFileType = .mp4
-        exporter.shouldOptimizeForNetworkUse = true
-        let semaphore = DispatchSemaphore(value: 0)
-        exporter.exportAsynchronously { semaphore.signal() }
-        semaphore.wait()
-        guard exporter.status == .completed else {
-            throw VideoError.exportFailed(exporter.error?.localizedDescription ?? "Unbekannter Audiofehler")
-        }
-    }
 }

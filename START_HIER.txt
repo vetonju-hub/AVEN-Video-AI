@@ -1,11 +1,7 @@
-AVEN VIDEO AI v3 — Adaptive Realism
+AVEN Video AI v3.4 – Update des bestehenden Projekts
 
-1) ZIP entpacken.
-2) INSTALLATION_DEUTSCH.md öffnen.
-3) Via GitHub Desktop dein bestehendes Repository aktualisieren.
-4) GitHub Actions -> grüner Intel-Build -> DMG herunterladen.
-5) App nach Programme ziehen, öffnen, Modelle einmalig herunterladen.
-6) Realismus von 1 bis 10 wählen; mit kurzem KI-Test beginnen.
+1. INSTALLATION_DEUTSCH.md lesen: enthält den Weg über GitHub Desktop ohne Terminalbefehle.
+2. PRUEFBERICHT.md zeigt, was getestet wurde und welche Mac-Prüfungen noch offen sind.
+3. Zuerst in der neuen App den Button „2-Sekunden-Qualitätstest“ ausführen.
 
-Dies ist das PROJECT ZIP, nicht die fertige DMG.
-Für echte Offline-KI sind große Modelldateien erforderlich.
+Dieses Paket enthält Quellcode und Builddateien. Es enthält keinen bereits auf macOS geprüften Installer. GitHub hat die direkten Schreibzugriffe abgelehnt; daher ist das Repository noch nicht aktualisiert.

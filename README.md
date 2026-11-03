@@ -1,43 +1,41 @@
-# AVEN Video AI v3 — Adaptive Realism Engine
+# AVEN Video AI 3.4
 
-Native macOS SwiftUI application for **Intel and Apple Silicon**; genuine offline inference with stable-diffusion.cpp and Wan2.1 VACE 1.3B. No Python, PyTorch, cloud inference, subscription, or terminal necessary for everyday use. Model weights must be downloaded once from Hugging Face (~4.5 GB for Q4, more for Q8).
+Native macOS-App mit SwiftUI, AVFoundation und lokalem Wan2.1 VACE 1.3B über stable-diffusion.cpp. Intel und Apple Silicon ab macOS 14.
 
-## Implemented
+## Änderungen gegenüber v3.3
 
-- Detects CPU architecture, CPU thread count, physical RAM, and Metal GPU.
-- Adapts video diffusion steps, image size, frame count, quantization tier, CPU threads, and backend based on hardware and user-defined realism level (1–10).
-- **MAX REALISM** (level 10): more compute-heavy locally suitable settings; doesn't promise photorealism or guarantee better frames. May fail due to memory or take extremely long on Intel 16 GB.
-- Image/reference-to-video or prompt-to-video (Wan VACE), new model-computed frames; no zoom-only placeholder in AI mode.
-- Up to 240 seconds via sequential AI clips; per-clip MP4 saves, persistent `job.json`, resume previous job, final video assembly with optional audio.
-- Previous photo montage video editor still available (5–240 seconds).
-- Intel package uses CPU inference; Apple Silicon builds an optional Metal backend. Same source adapts to both. **No Windows installer in this release.**
-- Q4 quantized model for low RAM, Q8 with more precise text encoder available for higher RAM (separate download); no automatic claim that model quality increases monotonically with more steps.
+- Mindestens 480p, 20 Sampling-Schritte und 33 Modellframes bei 16 FPS. Die früheren 352×192-/6-Schritt-/6-FPS-Profile sind entfernt.
+- VACE-spezifisch: CFG 5, Flow-Shift 16, Euler/discrete. Engine-Revision und Modellquellen sind festgeschrieben.
+- Qualitätsstufe bestimmt Schritte, Auflösung und Gewichte; Hardware bestimmt CPU-/Metal-Ausführung und Threads. Automatische Gewichtsänderung ist deaktiviert. Gleiches Profil ist keine Garantie für bitidentische Ergebnisse auf verschiedenen Backends.
+- SHA256 für alle fünf Gewichte; Prüfung vor Generierung. Q8/Q5 wird nicht still durch Q4/Q3 ersetzt.
+- Vollständige, nummerierte, lesbare PNGs in exakter Zielgröße erforderlich. Fast einfarbige Ausgabe wird abgelehnt. Bildstatistiken zertifizieren keine erkennbare Szene oder fotorealistische Qualität.
+- Originalframes, Aufrufparameter und Diagnosebericht bleiben erhalten. MP4-Ausgabe heißt bewusst **AVEN_KI_VORSCHAU.mp4** und muss visuell beurteilt werden.
+- Abbruch und Fortsetzen mit gespeicherten Szenen; alte fehlerhafte Aufträge müssen neu gestartet werden. Unterbrochene Szenen werden vor einem neuen Versuch archiviert.
+- Mehrzeiliger Prompt, negativer Prompt, Seed und ein reproduzierbarer 2-Sekunden-Test.
+- Fotos berücksichtigen EXIF-Ausrichtung. Videoimport extrahiert **ein Referenzbild** zur gewählten Zeit pro Clip. Das ist keine Übertragung der Originalbewegung und kein vollständiger Video-zu-Video-Modus. Wan VACE verwendet Referenzen als Motivvorlage, nicht als garantiert unveränderten Startframe. Mehrere Motive werden abwechselnd je KI-Szene genutzt.
+- Musikmodus übernimmt die komplette gemessene Audiospurdauer einschließlich Nachkommastellen. Kein stilles Abschneiden bei 240 Sekunden; höchstens 24 Stunden als Eingabegrenze. Musik läuft einmal mit Originaltempo. Bei manuell längeren Videos bleibt der Rest stumm.
 
-## What is NOT yet verified
+## Hardware und Qualität
 
-- This Linux session can check Swift syntax but **cannot compile or run the native app or inference engine on macOS**. The GitHub Actions workflows compile and smoke-test sd-cli on macOS; an actual generative model render must be tested on your Mac after the model download.
-- The first Wan video render may exceed 16 GB usable RAM depending on input and upstream engine version. Rendering 240 seconds of *unique* AI scenes locally may take days/weeks; it is not a single 4-minute generation. Some large models simply do not fit regardless of time.
-- **Windows PC support is a future port**, not an advertised built product.
-- The highest realism level cannot substitute for a larger model, powerful GPU or better training; it just increases compute and applies the best available settings for the current hardware class.
+Stufe 1–7: 832×480 (hochkant 480×832, quadratisch 640×640), Q4 + UMT5 Q3, 20–36 Schritte. Stufe 8–10: 1024×576 (bzw. Hochkant/768²), Q8 + UMT5 Q5, 40–50 Schritte. Jede Sequenz hat 33 Frames. Intel läuft auf CPU; Apple Silicon nutzt Metal für Diffusion und CPU für Textencoder/VAE.
 
-## Architecture
+Ab 8 GB kann ein Versuch gestartet werden, ohne Speicher- oder Erfolgsgarantie. Unter 8 GB ist dieses Modell blockiert. Ein Intel-i9-Mac mit 16 GB kann sehr langsam sein; höhere Stufen können an Speichergrenzen scheitern. Mehr RAM allein macht keine besseren Bilder. Ein anderer Backend kann numerisch andere Ergebnisse erzeugen. Kein Veo-Qualitätsversprechen.
 
-- `Sources/AVENApp.swift`: SwiftUI app, controls for quality and scene duration
-- `Sources/AdaptiveRealism.swift`: hardware detection and deterministic performance profiles
-- `Sources/AIGenerator.swift`: model download, local sd-cli Process, scene queue, persistent manifest, resume
-- `Sources/AIFrameEncoder.swift`: model-frame H.264 encoding and multi-clip assembly via AVFoundation
-- `Sources/VideoRenderer.swift`: earlier non-generative photo montage editor
-- `.github/workflows/build-macos.yml`: real macOS Intel and Apple Silicon builds + hardware tests + DMG artifacts
-- `scripts/build_macos.sh`: Swift compiler, C++ inference engine, ad hoc signing, DMG
+## Start und Installation
 
-## Model and engine sources
+Siehe [INSTALLATION_DEUTSCH.md](INSTALLATION_DEUTSCH.md). Der Build erzeugt `AVEN_Video_AI_v3.4_x86_64.dmg` und `AVEN_Video_AI_v3.4_arm64.dmg` in zwei GitHub-Actions-Jobs. Die sichtbare `build-macos.yml` ist eine identische Kopie für das manuelle Einsetzen in `.github/workflows/`.
 
-- Wan2.1: https://github.com/Wan-Video/Wan2.1
-- stable-diffusion.cpp: https://github.com/leejet/stable-diffusion.cpp (MIT)
-- Quantized Wan VACE: https://huggingface.co/calcuis/wan-1.3b-gguf
-- UMT5 text encoder: https://huggingface.co/city96/umt5-xxl-encoder-gguf
-- Wan VAE: https://huggingface.co/Comfy-Org/Wan_2.1_ComfyUI_repackaged
+## Prüfungen
 
-Model licenses must be reviewed by the user before redistribution. AVEN does not redistribute model weights in the installer. The standalone installer builds the underlying engine from upstream source during GitHub Actions, so users don't need to use a terminal.
+```sh
+bash tests/test_logic.sh        # echte Swift-Logiktests; auch auf Linux mit Swift
+python3 tests/smoke_static.py   # Paketdaten, Shellsyntax und Swift-Syntax
+bash tests/test_on_mac.sh      # echte PNG/MP4/Musik-Integration; nur macOS
+bash scripts/build_macos.sh    # vollständige App/Engine, Architektur, Signatur und DMG
+```
 
-See [INSTALLATION_DEUTSCH.md](INSTALLATION_DEUTSCH.md) for step-by-step installation.
+Native Medientests verwenden synthetische Frames/Audio und eine kleine VBR-MP3-Testdatei ohne Xing-Header. Sie testen keine neurale Bildqualität. Ein erfolgreicher CI-Build beweist keine erfolgreiche Wan-Generierung. Ein realer Linux-CPU-Test erzeugte mit den kompakten Gewichten ein erkennbares 480p-Einzelbild; Original und Log liegen unter `docs/validation/linux-single-frame/`. Das ersetzt keinen Videotest. Aktueller Prüfstatus und Grenzen stehen in [PRUEFBERICHT.md](PRUEFBERICHT.md).
+
+## Grenzen
+
+Die Szenen sind eigenständige Modellberechnungen; zwischen ihnen sind Schnitte und Motivänderungen möglich. Keine nahtlose minutenlange Kontinuität, kein garantierter Fotorealismus und kein garantierter Lauf auf jedem Mac. Der aktuelle Quellcode ist eine macOS-App; Windows ist noch nicht implementiert.

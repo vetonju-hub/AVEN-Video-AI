@@ -2,103 +2,159 @@ import Foundation
 import AVFoundation
 import CoreGraphics
 import CoreVideo
-import AppKit
+import ImageIO
 
-/// Writes the model's actual generated frames into a video (no pan/zoom interpolation).
+/// Encode the original pixels without scaling, interpolation or skipped corrupt frames.
 enum AIFrameEncoder {
-    static func encode(images: [URL], fps: Int, output: URL) throws {
-        guard images.count >= 2 else { throw NSError(domain: "AVEN", code: 1, userInfo: [NSLocalizedDescriptionKey: "Mindestens zwei KI-Frames nötig"]) }
-        let first = NSImage(contentsOf: images[0])?.cgImage(forProposedRect: nil, context: nil, hints: nil)
-        guard let cgFirst = first else { throw NSError(domain: "AVEN", code: 2, userInfo: [NSLocalizedDescriptionKey: "KI-Bild ist beschädigt"]) }
-        let w = (max(32, cgFirst.width) / 2) * 2
-        let h = (max(32, cgFirst.height) / 2) * 2
-        let writer = try AVAssetWriter(outputURL: output, fileType: .mp4)
+    static func encode(images: [URL], fps: Int, output: URL,
+                       cancellation: RenderCancellation = RenderCancellation()) throws {
+        guard images.count >= 2, fps > 0,
+              let source = CGImageSourceCreateWithURL(images[0] as CFURL, nil),
+              let first = CGImageSourceCreateImageAtIndex(source, 0, nil) else {
+            throw GenerationError.invalid("Keine lesbare Folge von KI-Frames.")
+        }
+        try cancellation.check()
+        let w = first.width, h = first.height
+        guard w >= 32, h >= 32, w % 2 == 0, h % 2 == 0 else { throw GenerationError.invalid("Ungültige Framegröße.") }
+        let temporary = output.deletingLastPathComponent().appendingPathComponent(".encode-\(UUID().uuidString).mp4")
+        defer { try? FileManager.default.removeItem(at: temporary) }
+        let writer = try AVAssetWriter(outputURL: temporary, fileType: .mp4)
         let input = AVAssetWriterInput(mediaType: .video, outputSettings: [
             AVVideoCodecKey: AVVideoCodecType.h264, AVVideoWidthKey: w, AVVideoHeightKey: h,
-            AVVideoCompressionPropertiesKey: [AVVideoAverageBitRateKey: 2_500_000]
+            AVVideoColorPropertiesKey: [
+                AVVideoColorPrimariesKey: AVVideoColorPrimaries_ITU_R_709_2,
+                AVVideoTransferFunctionKey: AVVideoTransferFunction_ITU_R_709_2,
+                AVVideoYCbCrMatrixKey: AVVideoYCbCrMatrix_ITU_R_709_2
+            ],
+            AVVideoCompressionPropertiesKey: [
+                AVVideoAverageBitRateKey: max(4_000_000, w * h * fps),
+                AVVideoExpectedSourceFrameRateKey: fps,
+                AVVideoMaxKeyFrameIntervalKey: fps * 2,
+                AVVideoProfileLevelKey: AVVideoProfileLevelH264HighAutoLevel
+            ]
         ])
         input.expectsMediaDataInRealTime = false
+        input.mediaTimeScale = Int32(fps)
         let adapter = AVAssetWriterInputPixelBufferAdaptor(assetWriterInput: input, sourcePixelBufferAttributes: [
-            kCVPixelBufferPixelFormatTypeKey as String: Int(kCVPixelFormatType_32ARGB),
+            kCVPixelBufferPixelFormatTypeKey as String: Int(kCVPixelFormatType_32BGRA),
             kCVPixelBufferWidthKey as String: w, kCVPixelBufferHeightKey as String: h,
             kCVPixelBufferCGImageCompatibilityKey as String: true,
             kCVPixelBufferCGBitmapContextCompatibilityKey as String: true
         ])
-        guard writer.canAdd(input) else { throw NSError(domain: "AVEN", code: 3, userInfo: [NSLocalizedDescriptionKey: "Encoder nicht verfügbar"]) }
+        guard writer.canAdd(input) else { throw GenerationError.invalid("H.264-Encoder nicht verfügbar.") }
         writer.add(input)
-        guard writer.startWriting() else { throw writer.error ?? NSError(domain: "AVEN", code: 4) }
+        guard writer.startWriting() else { throw writer.error ?? GenerationError.invalid("Encoderstart fehlgeschlagen.") }
         writer.startSession(atSourceTime: .zero)
-        for (index, imageURL) in images.enumerated() {
-            guard let image = NSImage(contentsOf: imageURL)?.cgImage(forProposedRect: nil, context: nil, hints: nil) else { continue }
-            while !input.isReadyForMoreMediaData {
-                Thread.sleep(forTimeInterval: 0.025)
-                if writer.status == .failed { throw writer.error ?? NSError(domain: "AVEN", code: 5) }
-            }
-            guard let pool = adapter.pixelBufferPool else { throw NSError(domain: "AVEN", code: 6) }
-            var bufferOptional: CVPixelBuffer?
-            guard CVPixelBufferPoolCreatePixelBuffer(kCFAllocatorDefault, pool, &bufferOptional) == kCVReturnSuccess,
-                  let buffer = bufferOptional else { throw NSError(domain: "AVEN", code: 7) }
-            CVPixelBufferLockBaseAddress(buffer, [])
-            guard let base = CVPixelBufferGetBaseAddress(buffer),
-                  let ctx = CGContext(data: base, width: w, height: h, bitsPerComponent: 8,
-                    bytesPerRow: CVPixelBufferGetBytesPerRow(buffer), space: CGColorSpaceCreateDeviceRGB(),
-                    bitmapInfo: CGImageAlphaInfo.premultipliedFirst.rawValue | CGBitmapInfo.byteOrder32Big.rawValue) else {
+        do {
+            for (index, file) in images.enumerated() {
+                try cancellation.check()
+                let deadline = Date().addingTimeInterval(60)
+                while !input.isReadyForMoreMediaData {
+                    try cancellation.check()
+                    guard writer.status == .writing, Date() < deadline else {
+                        throw writer.error ?? GenerationError.invalid("Encoder wartet zu lange auf Daten.")
+                    }
+                    Thread.sleep(forTimeInterval: 0.01)
+                }
+                guard let source = CGImageSourceCreateWithURL(file as CFURL, nil),
+                      let image = CGImageSourceCreateImageAtIndex(source, 0, nil), image.width == w, image.height == h else {
+                    throw GenerationError.invalid("Frame beschädigt oder falsche Größe: \(file.lastPathComponent)")
+                }
+                guard let pool = adapter.pixelBufferPool else { throw GenerationError.invalid("Pixelbuffer fehlt.") }
+                var optional: CVPixelBuffer?
+                guard CVPixelBufferPoolCreatePixelBuffer(kCFAllocatorDefault, pool, &optional) == kCVReturnSuccess,
+                      let buffer = optional else { throw GenerationError.invalid("Nicht genug Speicher für Videoframe.") }
+                CVPixelBufferLockBaseAddress(buffer, [])
+                guard let base = CVPixelBufferGetBaseAddress(buffer),
+                      let context = CGContext(data: base, width: w, height: h, bitsPerComponent: 8,
+                        bytesPerRow: CVPixelBufferGetBytesPerRow(buffer), space: CGColorSpace(name: CGColorSpace.sRGB)!,
+                        bitmapInfo: CGImageAlphaInfo.premultipliedFirst.rawValue | CGBitmapInfo.byteOrder32Little.rawValue) else {
+                    CVPixelBufferUnlockBaseAddress(buffer, [])
+                    throw GenerationError.invalid("Frame-Kontext konnte nicht angelegt werden.")
+                }
+                context.draw(image, in: CGRect(x: 0, y: 0, width: w, height: h))
                 CVPixelBufferUnlockBaseAddress(buffer, [])
-                throw NSError(domain: "AVEN", code: 8)
-            }
-            ctx.setFillColor(CGColor(gray: 0, alpha: 1))
-            ctx.fill(CGRect(x: 0, y: 0, width: w, height: h))
-            ctx.draw(image, in: CGRect(x: 0, y: 0, width: w, height: h))
-            CVPixelBufferUnlockBaseAddress(buffer, [])
-            guard adapter.append(buffer, withPresentationTime: CMTime(value: Int64(index), timescale: Int32(fps))) else {
-                throw writer.error ?? NSError(domain: "AVEN", code: 9)
-            }
-        }
-        input.markAsFinished()
-        let semaphore = DispatchSemaphore(value: 0)
-        writer.finishWriting { semaphore.signal() }
-        semaphore.wait()
-        guard writer.status == .completed else { throw writer.error ?? NSError(domain: "AVEN", code: 10) }
-    }
-
-    static func combine(clips: [URL], output: URL, limit: Double, soundtrack: URL?) throws {
-        let composition = AVMutableComposition()
-        guard let videoTrack = composition.addMutableTrack(withMediaType: .video, preferredTrackID: kCMPersistentTrackID_Invalid) else {
-            throw NSError(domain: "AVEN", code: 30)
-        }
-        let total = CMTime(seconds: limit, preferredTimescale: 600)
-        var cursor = CMTime.zero
-        for clip in clips {
-            guard CMTimeCompare(cursor, total) < 0 else { break }
-            let asset = AVURLAsset(url: clip)
-            guard let source = asset.tracks(withMediaType: .video).first else { throw NSError(domain: "AVEN", code: 31, userInfo: [NSLocalizedDescriptionKey: "Keine Videospur: \(clip.lastPathComponent)"]) }
-            let remain = CMTimeSubtract(total, cursor)
-            let amount = CMTimeCompare(asset.duration, remain) > 0 ? remain : asset.duration
-            try videoTrack.insertTimeRange(CMTimeRange(start: .zero, duration: amount), of: source, at: cursor)
-            videoTrack.preferredTransform = source.preferredTransform
-            cursor = CMTimeAdd(cursor, amount)
-        }
-        if let sound = soundtrack, FileManager.default.fileExists(atPath: sound.path),
-           let audioTrack = composition.addMutableTrack(withMediaType: .audio, preferredTrackID: kCMPersistentTrackID_Invalid) {
-            let asset = AVURLAsset(url: sound)
-            if let track = asset.tracks(withMediaType: .audio).first, CMTimeCompare(asset.duration, .zero) > 0 {
-                var position = CMTime.zero
-                while CMTimeCompare(position, cursor) < 0 {
-                    let left = CMTimeSubtract(cursor, position)
-                    let part = CMTimeCompare(asset.duration, left) > 0 ? left : asset.duration
-                    try audioTrack.insertTimeRange(CMTimeRange(start: .zero, duration: part), of: track, at: position)
-                    position = CMTimeAdd(position, part)
+                guard adapter.append(buffer, withPresentationTime: CMTime(value: Int64(index), timescale: Int32(fps))) else {
+                    throw writer.error ?? GenerationError.invalid("Frame konnte nicht geschrieben werden.")
                 }
             }
+            writer.endSession(atSourceTime: CMTime(value: Int64(images.count), timescale: Int32(fps)))
+            input.markAsFinished()
+            let done = DispatchSemaphore(value: 0)
+            writer.finishWriting { done.signal() }
+            while done.wait(timeout: .now() + 0.1) == .timedOut { try cancellation.check() }
+            try cancellation.check()
+            guard writer.status == .completed else { throw writer.error ?? GenerationError.invalid("Videoabschluss fehlgeschlagen.") }
+            try validateClip(temporary, expectedDuration: Double(images.count) / Double(fps))
+            try FileManager.default.moveItem(at: temporary, to: output)
+        } catch {
+            writer.cancelWriting()
+            throw error
         }
+    }
+
+    static func validateClip(_ url: URL, expectedDuration: Double) throws {
+        let asset = AVURLAsset(url: url, options: [AVURLAssetPreferPreciseDurationAndTimingKey: true])
+        guard asset.isReadable, let track = asset.tracks(withMediaType: .video).first,
+              asset.duration.seconds.isFinite,
+              abs(track.timeRange.duration.seconds - expectedDuration) < 0.08 else {
+            throw GenerationError.invalid("MP4 ist unvollständig oder hat eine falsche Dauer: \(url.lastPathComponent)")
+        }
+    }
+
+    static func combine(clips: [URL], output: URL, limit: Double, soundtrack: URL?,
+                        cancellation: RenderCancellation = RenderCancellation()) throws {
+        _ = try VideoTiming.resolve(manual: limit, music: nil, matchMusic: false)
+        try cancellation.check()
+        let composition = AVMutableComposition()
+        guard let video = composition.addMutableTrack(withMediaType: .video, preferredTrackID: kCMPersistentTrackID_Invalid) else {
+            throw GenerationError.invalid("Videospur konnte nicht angelegt werden.")
+        }
+        let total = CMTime(seconds: limit, preferredTimescale: 48_000)
+        var cursor = CMTime.zero
+        for clip in clips {
+            try cancellation.check()
+            if CMTimeCompare(cursor, total) >= 0 { break }
+            let asset = AVURLAsset(url: clip, options: [AVURLAssetPreferPreciseDurationAndTimingKey: true])
+            guard let source = asset.tracks(withMediaType: .video).first, source.timeRange.duration.seconds > 0 else {
+                throw GenerationError.invalid("Keine Videospur: \(clip.lastPathComponent)")
+            }
+            let remain = CMTimeSubtract(total, cursor)
+            let amount = CMTimeMinimum(source.timeRange.duration, remain)
+            try video.insertTimeRange(CMTimeRange(start: source.timeRange.start, duration: amount), of: source, at: cursor)
+            video.preferredTransform = source.preferredTransform
+            cursor = CMTimeAdd(cursor, amount)
+        }
+        guard abs(cursor.seconds - limit) < 1.0 / 48_000 else {
+            throw GenerationError.invalid("Die fertigen KI-Szenen decken die gewünschte Länge noch nicht vollständig ab.")
+        }
+        if let sound = soundtrack {
+            let asset = AVURLAsset(url: sound, options: [AVURLAssetPreferPreciseDurationAndTimingKey: true])
+            guard let source = asset.tracks(withMediaType: .audio).first,
+                  let audio = composition.addMutableTrack(withMediaType: .audio, preferredTrackID: kCMPersistentTrackID_Invalid),
+                  source.timeRange.duration.seconds.isFinite, source.timeRange.duration.seconds > 0 else {
+                throw GenerationError.invalid("Musikdatei fehlt oder enthält keine lesbare Audiospur.")
+            }
+            // Preserve the original speed. No looping; manual videos longer than the song end in silence.
+            let amount = CMTimeMinimum(total, source.timeRange.duration)
+            try audio.insertTimeRange(CMTimeRange(start: source.timeRange.start, duration: amount), of: source, at: .zero)
+        }
+        let temporary = output.deletingLastPathComponent().appendingPathComponent(".combine-\(UUID().uuidString).mp4")
+        defer { try? FileManager.default.removeItem(at: temporary) }
         guard let exporter = AVAssetExportSession(asset: composition, presetName: AVAssetExportPresetHighestQuality) else {
-            throw NSError(domain: "AVEN", code: 32)
+            throw GenerationError.invalid("MP4-Export nicht verfügbar.")
         }
-        exporter.outputURL = output
+        exporter.outputURL = temporary
         exporter.outputFileType = .mp4
-        let sem = DispatchSemaphore(value: 0)
-        exporter.exportAsynchronously { sem.signal() }
-        sem.wait()
-        guard exporter.status == .completed else { throw exporter.error ?? NSError(domain: "AVEN", code: 33) }
+        exporter.timeRange = CMTimeRange(start: .zero, duration: total)
+        let done = DispatchSemaphore(value: 0)
+        exporter.exportAsynchronously { done.signal() }
+        while done.wait(timeout: .now() + 0.1) == .timedOut {
+            if cancellation.isCancelled { exporter.cancelExport() }
+        }
+        try cancellation.check()
+        guard exporter.status == .completed else { throw exporter.error ?? GenerationError.invalid("MP4-Export fehlgeschlagen.") }
+        try validateClip(temporary, expectedDuration: limit)
+        try FileManager.default.moveItem(at: temporary, to: output)
     }
 }

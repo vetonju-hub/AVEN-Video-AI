@@ -1,54 +1,57 @@
-# AVEN Video AI v3 — Installation ohne Terminal (Intel & Apple Silicon)
+# AVEN Video AI 3.4 installieren
 
-## Wichtig vorab
+Dieses Update setzt dein vorhandenes Projekt fort. Das Paket enthält **Quellcode, Tests und Builddateien**, keinen bereits auf macOS überprüften Installer. Der aktuelle GitHub-Zugriff hat Schreibversuche mit HTTP 403 abgelehnt. Deshalb müssen die Dateien einmal über GitHub Desktop hochgeladen werden, bevor GitHub den neuen Installer bauen kann.
 
-Das ZIP ist **der Quellcode**, nicht die fertige `.app`. Da der Build nur auf macOS erfolgen kann, erzeugt GitHub Actions für dich eine echte `.dmg`-Installationsdatei. Die **erste KI-Generierung auf Intel i9 mit 16 GB RAM ist experimentell** und kann sehr viel Zeit benötigen oder an RAM scheitern.
+## 1. Projektdateien ersetzen – ohne Terminalbefehle
 
-## A. Bestehendes GitHub-Projekt aktualisieren
+1. ZIP entpacken. Darin den Ordner `AVEN-Video-AI` öffnen.
+2. In **GitHub Desktop** dein Repository `AVEN-Video-AI` auswählen. Über **Repository → Show in Finder** den vorhandenen Projektordner öffnen. Auf deinem Mac war das `~/Documents/GitHub/AVEN-Video-AI`.
+3. Falls dort noch eigene, nicht hochgeladene Änderungen liegen, zuerst eine Kopie des alten Projektordners aufheben. Anschließend die Ordner **Sources**, **scripts**, **tests**, **docs** und **Assets** sowie die Dateien **Info.plist**, **README.md**, **MODELLQUELLEN.md**, **INSTALLATION_DEUTSCH.md**, **START_HIER.txt**, **PRUEFBERICHT.md**, **build-macos.yml** und **tests_smoke.py** aus dem Update in dein Projekt kopieren. Vorhandene Versionen dieser Dateien/Ordner ersetzen.
+4. Den Workflow gesondert aktualisieren: Im Finder **⌘ + ⇧ + G** drücken und `~/Documents/GitHub/AVEN-Video-AI/.github/workflows` eingeben. In diesen geöffneten Ordner die **sichtbare Datei `build-macos.yml`** aus dem Update kopieren und die vorhandene gleichnamige Datei ersetzen. Dafür müssen versteckte Dateien nicht eingeblendet werden.
+5. Zurück in GitHub Desktop. Als Zusammenfassung beispielsweise **AVEN 3.4 – KI-Qualität und Musiklänge** eintragen. **Commit to main** und anschließend **Push origin** anklicken. Es werden keine Modellgewichte hochgeladen.
 
-Du hast bereits das GitHub-Repository `vetonju-hub/AVEN-Video-AI`.
+Der Workflow unter `.github/workflows/` ist entscheidend. Die sichtbare Datei im Projektstamm allein startet keinen Build. Beide Kopien im Update sind identisch.
 
-**Ohne Terminal mit GitHub Desktop:**
+## 2. Den richtigen Installer herunterladen
 
-1. Öffne https://desktop.github.com/ und installiere GitHub Desktop.
-2. Melde dich mit deinem GitHub-Konto an.
-3. File → Clone repository → `AVEN-Video-AI` → Clone.
-4. Entpacke `AVEN_Video_AI_v3_Adaptive_Realism_Projekt.zip` in Downloads.
-5. Öffne in GitHub Desktop Repository → Show in Finder.
-6. Kopiere den **Inhalt** des entpackten v3-Ordners (`Sources`, `scripts`, `Assets`, `.github`, `Info.plist`, `README.md` usw.) in den soeben geöffneten geklonten Repository-Ordner; vorhandene Projektdateien ersetzen/Ordner zusammenführen.
-7. **Nicht** den Git-Versionsordner `.git` verändern. Der versteckte Ordner `.github` muss mitkommen; Finder zeigt ihn mit `⌘⇧.` an.
-8. In GitHub Desktop alle Änderungen kontrollieren; links unten als Summary `AVEN v3 Adaptive Realism` eingeben → **Commit to main** → **Push origin**.
-9. Öffne https://github.com/vetonju-hub/AVEN-Video-AI/actions.
+1. [GitHub Actions öffnen](https://github.com/vetonju-hub/AVEN-Video-AI/actions).
+2. Den neuen Lauf **AVEN v3.4 – Adaptive Realism Intel und Apple Silicon** öffnen. Bei einem normalen Push startet er automatisch; alternativ **Run workflow** verwenden.
+3. Beide Jobs müssen grün sein. Die Logik- und Medientests laufen vor dem App-Build. Bei Rot gibt es noch keinen geprüften neuen Installer; im fehlgeschlagenen Schritt den Fehlertext ansehen.
+4. Unten bei **Artifacts** auswählen:
 
-**Alternative per Browser:** Lade einzelne Projektdateien in der richtigen Unterordner-Struktur hoch und ersetze gleichnamige Dateien. Bei `.github/workflows/build-macos.yml` muss der Dateipfad genauso bleiben.
+| Dein Mac | Artifact | Enthaltene DMG |
+|---|---|---|
+| MacBook Pro Intel i9 | AVEN-v3.4-x86_64-Mac-Installer | AVEN_Video_AI_v3.4_x86_64.dmg |
+| Mac mit Apple-Chip | AVEN-v3.4-arm64-Mac-Installer | AVEN_Video_AI_v3.4_arm64.dmg |
 
-## B. Installationsdatei herunterladen
+5. Artifact-ZIP entpacken, DMG öffnen und **AVEN Video AI.app** in **Programme** ziehen. Eine laufende alte App vorher beenden. Vorhandene App ersetzen.
+6. Die App ist lokal/ad-hoc signiert und nicht Apple-notarisiert. Falls macOS sie blockiert, nur für diesen selbst gebauten Download den Weg über **Systemeinstellungen → Datenschutz & Sicherheit → Dennoch öffnen** verwenden. Keine globalen Sicherheitseinstellungen abschalten.
 
-1. In GitHub → **Actions** den neuesten Eintrag `AVEN v3 - Adaptive Realism Intel und Apple Silicon` öffnen.
-2. Der Build wird für zwei Architekturen gestartet. Prüfe, ob der jeweilige Job einen **grünen Haken** hat.
-3. Für das MacBook Pro 2019 (Intel) unten unter **Artifacts** auf `AVEN-v3-x86_64-Mac-Installer` klicken.
-4. Das heruntergeladene ZIP entpacken. `AVEN_Video_AI_v3_x86_64.dmg` doppelklicken.
-5. `AVEN Video AI.app` per Maus in den Ordner **Programme** ziehen.
-6. `AVEN Video AI.app` in **Programme** öffnen. Wenn macOS die unsignierte App blockiert: Systemeinstellungen → Datenschutz & Sicherheit → dennoch öffnen, **nur wenn du deinem selbstgebauten App-Artefakt vertraust**. Nicht die allgemeine Sicherheit deaktivieren.
+Ein grüner Build belegt Kompilierung, Paketprüfungen und synthetische Medientests. Er belegt noch keine brauchbare KI-Generierung auf deinem Mac.
 
-Für neuere Apple-Silicon-Macs nimm entsprechend `AVEN-v3-arm64-Mac-Installer`.
+## 3. Zuerst den kurzen Qualitätstest ausführen
 
-**Wenn der Job rot ist:** Nicht installieren. Öffne den roten Job, kopiere die erste Fehlermeldung aus dem Build-Protokoll und sende sie zur Fehlerbehebung. Ein grüner CI-Build ersetzt keinen echten KI-Render-Test.
+1. Neue App öffnen. Vorhandene gültige V3-Modelle werden weiterverwendet. Nur falls sie fehlen, **Kostenlose KI-Modelle herunterladen** anklicken.
+2. **2-Sekunden-Qualitätstest** anklicken. Dieser verwendet automatisch einen englischen Katzen-Prompt, Seed 42, 832×480, 20 Schritte, 33 Originalframes und 16 FPS. Foto, Musik und aktuelle Prompt-Eingabe beeinflussen diesen Test nicht.
+3. Warten, bis **Vorschau erstellt** erscheint. Die Berechnung ist echte lokale KI und kann auf Intel sehr lange dauern. 20 Schritte bei 480p benötigen erheblich mehr Zeit als der alte unbrauchbare Minimalmodus.
+4. **KI-Vorschau anzeigen** öffnet den Finder. `AVEN_KI_VORSCHAU.mp4` abspielen. Zusätzlich **Szenenordner anzeigen → scene_001** öffnen und einige `generated_000.png` usw. ansehen. Die Bilder müssen bereits als Originalframes erkennbare Motive enthalten. Größerer Export oder Nachschärfen repariert keine fehlerhafte Diffusion.
+5. Bei einem Fehler sind `engine.log`, `command.json`, `frame-report.json` (falls Frames vollständig lesbar waren) und ein Original-PNG die wichtigen Diagnose-Dateien. Ein neues `engine.log` ist aussagekräftiger als das alte Protokoll des fehlenden VACE-Tensors.
 
-## C. Erstes echtes KI-Video erstellen
+Fast einfarbige, unvollständige, beschädigte oder falsch dimensionierte Ausgabe wird nicht als fertiges Video übernommen. Andere schlechte Bilder können diese technischen Prüfungen bestehen: Motiverkennung, Rauschen und sichtbare Qualität müssen weiter visuell geprüft werden.
 
-1. Starte AVEN. Im KI-Bereich steht deine erkannte Hardware.
-2. Gib einen englischen Prompt ein, z. B.: `A singer wearing a black jacket slowly turns toward camera, subtle natural head motion, cinematic moonlight, realistic face.`
-3. Optional **Bilder hinzufügen** und **Erstes Bild als Referenz verwenden** aktivieren.
-4. **Realismusstufe 2–3** und eine sehr kurze Gesamtdauer (2–4 Sekunden) für den ersten Test verwenden.
-5. Klicke **Kostenlose KI-Modelle herunterladen**. Rund 4,5 GB Daten müssen einmalig geladen werden. Danach ist die Berechnung offline. Die KI-Engine liegt bereits in der App.
-6. Klicke **ECHTES KI-VIDEO GENERIEREN**. AVEN erstellt `~/Movies/AVEN Video AI/KI Aufträge/Job-...` und speichert jede erzeugte Szene separat.
-7. Wenn der erste Test klappt, erhöhe den Regler auf 5, dann 8, dann 10. Es gibt keine Qualitätsgarantie. Bei Speichermangel niedrigere Stufe verwenden.
-8. Für mehrminütige Videos Dauer auf bis zu 240 Sekunden setzen; AVEN generiert viele Clips nacheinander und fügt sie zusammen.
-9. Bei Unterbrechung **Letzten Auftrag fortsetzen** drücken. Erstellte Szenen werden nicht neu berechnet.
+## 4. Eigene Musik und Referenzen
 
-**Nicht verwechseln:** `MP4-Video erstellen` ist der bisherige Bild-Animator. Der Button **ECHTES KI-VIDEO GENERIEREN** startet das neuronale Videomodell.
+- Im großen Promptfeld Motiv, Bewegung, Licht und Kamera beschreiben. Für Wan empfiehlt sich Englisch. Unter den erweiterten Einstellungen kannst du negativen Prompt und Seed ändern.
+- **Bilder hinzufügen** importiert Foto-Referenzen mit korrekter EXIF-Ausrichtung.
+- **Video als Referenz** übernimmt pro ausgewähltem Clip ein Bild zur eingestellten Referenzzeit. Der Zeitwert gilt beim Import. Das Originalvideo wird nicht in seiner ganzen Bewegung umgestaltet. Fotos/Videobilder werden reihum je Szene als Motivvorlage verwendet.
+- **Musik hinzufügen** und **Videolänge automatisch an die gesamte Musik anpassen** aktivieren. Die KI plant dann die volle gemessene Audiospurdauer; die frühere 240-Sekunden-Grenze ist entfernt. Bei manuell gewählter längerer Videodauer wird die Musik nicht wiederholt; der Rest bleibt stumm.
+- Aufträge sichern Referenzen und Musik im Auftragsordner. Diese Kopien ermöglichen späteres Fortsetzen auch nach Verschieben der ursprünglichen Dateien.
+- **Bilder / Titel animiert exportieren** ist der konventionelle Export. **ECHTES KI-VIDEO GENERIEREN** startet die neue Modellberechnung.
 
-## Hardwaregrenzen
+## 5. Realismus und Hardware
 
-Auf einem Intel i9 mit 16 GB RAM findet die KI-Berechnung ausschließlich auf der CPU statt. Das kann extrem langsam sein und manche Einstellungen können durch RAM-Limits scheitern. Mehr Zeit allein kann fehlenden Arbeitsspeicher nicht ersetzen. Die Stufe 10 bedeutet „höchster unterstützter Rechenaufwand“, nicht Nano-Banana-/Veo-Qualität.
+Beginne auf deinem Intel-i9-Mac mit Stufe 1 und dem kurzen Test. Die Stufen erhöhen Schritte und später Auflösung/Präzision. Es gibt keine automatische Herabstufung der angeforderten Qualität wegen wenig RAM. Stufe 8–10 verlangt Q8 und UMT5 Q5 und kann auf 16 GB scheitern. Die App nennt fehlende Gewichte ausdrücklich.
+
+Unter 8 GB wird dieses Wan-Modell nicht gestartet. Auch mit 8–16 GB ist kein erfolgreicher Lauf garantiert. Starke Hardware kann schneller rechnen und größere Profile bewältigen; Fotorealismus und identische Bilder auf unterschiedlichen Backends sind nicht garantiert. Eine Windows-App ist in diesem Update nicht enthalten.
+
+Alte Aufträge mit den v3.3-Minimalprofilen bitte **neu starten**. Die Dateien werden behalten, aber ihre problematischen Parameter werden nicht erneut verwendet.
