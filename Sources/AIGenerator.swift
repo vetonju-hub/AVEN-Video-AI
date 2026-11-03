@@ -20,23 +20,30 @@ final class AVENLocalAI: NSObject, ObservableObject, URLSessionDownloadDelegate 
         let name: String
         let source: String
         let minimumBytes: Int64
+        let exactBytes: Int64?
+        init(name: String, source: String, minimumBytes: Int64, exactBytes: Int64? = nil) {
+            self.name = name
+            self.source = source
+            self.minimumBytes = minimumBytes
+            self.exactBytes = exactBytes
+        }
     }
     // Source filenames confirmed against official hosting repositories. Size checks detect HTTP error documents.
     private let q4 = Weight(name: "wan2.1-vace-1.3b-q4_0.gguf",
         source: "https://huggingface.co/calcuis/wan-1.3b-gguf/resolve/main/wan2.1-vace-1.3b-q4_0.gguf",
-        minimumBytes: 1_000_000_000)
+        minimumBytes: 1_000_000_000, exactBytes: 1_345_134_272)
     private let q8 = Weight(name: "wan2.1-vace-1.3b-q8_0.gguf",
         source: "https://huggingface.co/calcuis/wan-1.3b-gguf/resolve/main/wan2.1-vace-1.3b-q8_0.gguf",
         minimumBytes: 2_000_000_000)
     private let t5Q3 = Weight(name: "umt5-xxl-encoder-Q3_K_S.gguf",
         source: "https://huggingface.co/city96/umt5-xxl-encoder-gguf/resolve/main/umt5-xxl-encoder-Q3_K_S.gguf",
-        minimumBytes: 2_000_000_000)
+        minimumBytes: 2_000_000_000, exactBytes: 2_858_489_696)
     private let t5Q5 = Weight(name: "umt5-xxl-encoder-Q5_K_M.gguf",
         source: "https://huggingface.co/city96/umt5-xxl-encoder-gguf/resolve/main/umt5-xxl-encoder-Q5_K_M.gguf",
         minimumBytes: 3_500_000_000)
     private let vae = Weight(name: "wan_2.1_vae.safetensors",
         source: "https://huggingface.co/Comfy-Org/Wan_2.1_ComfyUI_repackaged/resolve/main/split_files/vae/wan_2.1_vae.safetensors",
-        minimumBytes: 200_000_000)
+        minimumBytes: 200_000_000, exactBytes: 253_815_318)
 
     private var downloadSession: URLSession?
     private var downloadItems: [Weight] = []
@@ -69,10 +76,26 @@ final class AVENLocalAI: NSObject, ObservableObject, URLSessionDownloadDelegate 
         }
     }
 
-    private func ready(_ weight: Weight) -> Bool {
+    private func sizeOf(_ weight: Weight) -> Int64 {
         let url = modelDirectory.appendingPathComponent(weight.name)
-        let bytes = (try? FileManager.default.attributesOfItem(atPath: url.path)[.size] as? NSNumber)?.int64Value ?? 0
+        return (try? FileManager.default.attributesOfItem(atPath: url.path)[.size] as? NSNumber)?.int64Value ?? 0
+    }
+
+    private func ready(_ weight: Weight) -> Bool {
+        let bytes = sizeOf(weight)
+        if let exact = weight.exactBytes { return bytes == exact }
         return bytes >= weight.minimumBytes
+    }
+
+    private func corruptModelDescription() -> String? {
+        for weight in [q4, t5Q3, vae] {
+            let bytes = sizeOf(weight)
+            if bytes > 0 && !ready(weight) {
+                let expected = weight.exactBytes.map(String.init) ?? "mindestens \(weight.minimumBytes)"
+                return "Modell-Datei unvollständig oder verändert: \(weight.name) (\(bytes) statt \(expected) Bytes). Bitte im Modellordner nur diese Datei löschen und erneut über AVEN herunterladen."
+            }
+        }
+        return nil
     }
 
     func updateAvailability() {
@@ -142,8 +165,8 @@ final class AVENLocalAI: NSObject, ObservableObject, URLSessionDownloadDelegate 
             let status = (downloadTask.response as? HTTPURLResponse)?.statusCode ?? 0
             guard (200...299).contains(status) else { throw NSError(domain: "AVEN", code: status, userInfo: [NSLocalizedDescriptionKey: "HTTP \(status)"]) }
             let bytes = (try FileManager.default.attributesOfItem(atPath: location.path)[.size] as? NSNumber)?.int64Value ?? 0
-            guard bytes >= item.minimumBytes else {
-                throw NSError(domain: "AVEN", code: 50, userInfo: [NSLocalizedDescriptionKey: "Modell ist unvollständig (\(bytes) Bytes)"])
+            guard (item.exactBytes.map { bytes == $0 } ?? (bytes >= item.minimumBytes)) else {
+                throw NSError(domain: "AVEN", code: 50, userInfo: [NSLocalizedDescriptionKey: "Modell ist unvollständig oder verändert: \(item.name) (\(bytes) Bytes)"])
             }
             let target = modelDirectory.appendingPathComponent(item.name)
             if FileManager.default.fileExists(atPath: target.path) { try FileManager.default.removeItem(at: target) }
@@ -169,7 +192,7 @@ final class AVENLocalAI: NSObject, ObservableObject, URLSessionDownloadDelegate 
                           soundtrack: URL?, plan: AVENQualityPlan, targetSeconds: Double) {
         guard !isDownloading && !isGenerating else { return }
         updateAvailability()
-        guard isReady else { message = "Bitte erst KI-Modelle herunterladen."; return }
+        guard isReady else { message = corruptModelDescription() ?? "Bitte erst KI-Modelle herunterladen."; return }
         guard let engine = engine, FileManager.default.isExecutableFile(atPath: engine.path) else {
             message = "KI-Engine fehlt. Bitte den vollständigen Installer bauen."; return
         }
@@ -248,34 +271,42 @@ final class AVENLocalAI: NSObject, ObservableObject, URLSessionDownloadDelegate 
             "-t", String(job.plan.threads), "--seed", String(10000 + index * 9973),
             "-v", "-o", base]
         if let name = job.referenceName { args += ["-i", folder.appendingPathComponent(name).path] }
+        // Low-RAM mode uses parameter streaming from disk. This can be extremely slow,
+        // but it lowers resident model weight usage. It does not guarantee the model fits.
+        if AVENHardware.detect().memoryGB <= 16 && job.plan.backend == "cpu" {
+            args += ["--params-backend", "disk"]
+        }
         let proc = Process()
         proc.executableURL = engine
         proc.currentDirectoryURL = segmentFolder
         proc.arguments = args
-        let pipe = Pipe()
-        proc.standardOutput = pipe
-        proc.standardError = pipe
         let sceneNumber = index + 1
-        message = "Echte KI generiert Szene \(sceneNumber)/\(total), Stufe \(job.plan.level)/10 – Speichern nach jeder Szene"
-        lastErrorLines = []
-        pipe.fileHandleForReading.readabilityHandler = { [weak self] handle in
-            let bytes = handle.availableData
-            guard !bytes.isEmpty else { return }
-            let raw = String(decoding: bytes, as: UTF8.self)
-            let line = raw.split(separator: "\n").last.map(String.init) ?? raw
-            DispatchQueue.main.async {
-                guard let self = self else { return }
-                self.lastErrorLines.append(String(line.prefix(220)))
-                if self.lastErrorLines.count > 6 { self.lastErrorLines.removeFirst() }
-                if self.isGenerating { self.message = "KI Szene \(sceneNumber)/\(total): " + String(line.prefix(130)) }
+        message = "KI Szene \(sceneNumber)/\(total) läuft. Vollständiges engine.log wird im Szenenordner gespeichert."
+        let logURL = segmentFolder.appendingPathComponent("engine.log")
+        let header = "AVEN KI Diagnose\nArchitektur: \(AVENHardware.detect().architecture), RAM: \(AVENHardware.detect().memoryGB) GB\n" +
+            "Modellgroessen (Bytes): VACE=\(sizeOf(q4)), UMT5=\(sizeOf(t5Q3)), VAE=\(sizeOf(vae))\n" +
+            "Backend=\(job.plan.backend), Aufloesung=\(job.plan.width)x\(job.plan.height), Frames=\(job.plan.frames)\n" +
+            "Ausfuehrbare Datei: \(engine.path)\n--- CLI-Ausgabe ---\n"
+        do {
+            try Data(header.utf8).write(to: logURL, options: .atomic)
+            let logHandle = try FileHandle(forWritingTo: logURL)
+            logHandle.seekToEndOfFile()
+            // Save both stdout and stderr, including the IMPORTANT errors before
+            // the generic 'new_sd_ctx_t failed' trailer. No Terminal is required.
+            proc.standardOutput = logHandle
+            proc.standardError = logHandle
+            proc.terminationHandler = { [weak self] finished in
+                try? logHandle.close()
+                DispatchQueue.main.async {
+                    self?.finishScene(status: finished.terminationStatus, job: job, folder: folder, segmentFolder: segmentFolder)
+                }
             }
+            try proc.run()
+            process = proc
+        } catch {
+            isGenerating = false
+            message = "KI-Start fehlgeschlagen: \(error.localizedDescription). Fehlerprotokoll im Szenenordner."
         }
-        proc.terminationHandler = { [weak self] finished in
-            pipe.fileHandleForReading.readabilityHandler = nil
-            DispatchQueue.main.async { self?.finishScene(status: finished.terminationStatus, job: job, folder: folder, segmentFolder: segmentFolder) }
-        }
-        do { try proc.run(); process = proc }
-        catch { isGenerating = false; message = "KI-Start fehlgeschlagen: \(error.localizedDescription)" }
     }
 
     private func finishScene(status: Int32, job: AIJobManifest, folder: URL, segmentFolder: URL) {
@@ -283,7 +314,16 @@ final class AVENLocalAI: NSObject, ObservableObject, URLSessionDownloadDelegate 
         if abortRequested { isGenerating = false; message = "Angehalten. Bisherige KI-Szenen gespeichert. Über 'Fortsetzen' weiter."; return }
         guard status == 0 else {
             isGenerating = false
-            message = "KI-Fehler \(status). Möglicherweise zu wenig RAM. Szene bleibt für Diagnose erhalten. " + (lastErrorLines.last ?? "")
+            let logURL = segmentFolder.appendingPathComponent("engine.log")
+            let lines = ((try? String(contentsOf: logURL, encoding: .utf8)) ?? "").components(separatedBy: .newlines)
+            let matches = lines.filter { line in
+                let l = line.lowercased()
+                return l.contains("error") || l.contains("failed") || l.contains("out of memory") ||
+                    l.contains("unsupported") || l.contains("invalid") || l.contains("not enough")
+            }
+            // The final new_sd_ctx_t failure is generic, so display the preceding specific error.
+            let detail = matches.reversed().first { !$0.contains("new_sd_ctx_t failed") } ?? matches.last ?? "Keine Detailmeldung gefunden"
+            message = "KI-Fehler \(status): \(String(detail.prefix(160))). 'Szenenordner anzeigen' > scene_001 > engine.log öffnen und den Fehlertext senden."
             return
         }
         let urls = ((try? FileManager.default.contentsOfDirectory(at: segmentFolder, includingPropertiesForKeys: nil)) ?? [])
