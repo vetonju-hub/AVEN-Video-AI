@@ -77,7 +77,14 @@ enum FrameValidation {
         for k in stride(from: 0, to: bytes.count, by: 4) {
             let r = bytes[k], g = bytes[k+1], b = bytes[k+2]
             rgb += [r,g,b]
-            luma.append(UInt8((Int(r) * 54 + Int(g) * 183 + Int(b) * 19) / 256))
+            // Separate concrete Int expressions keep newer macOS SDK overloads
+            // from exhausting Swift's type checker. The arithmetic is unchanged.
+            let redContribution: Int = Int(r) * 54
+            let greenContribution: Int = Int(g) * 183
+            let blueContribution: Int = Int(b) * 19
+            let weightedLuma: Int = redContribution + greenContribution + blueContribution
+            let value: UInt8 = UInt8(weightedLuma / 256)
+            luma.append(value)
         }
         return (w, h, luma, rgb)
     }
