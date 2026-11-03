@@ -2,6 +2,8 @@ import Foundation
 import AppKit
 import AVFoundation
 import CoreGraphics
+import CoreMedia
+import CoreVideo
 import ImageIO
 import UniformTypeIdentifiers
 import AudioToolbox
@@ -60,13 +62,52 @@ struct MediaTests {
         try AIFrameEncoder.encode(images: frames, fps: 16, output: clip, cancellation: RenderCancellation())
         let asset = AVURLAsset(url: clip)
         precondition(abs(asset.duration.seconds - 33.0 / 16.0) < 0.02, "Exact final frame duration is required")
-        let reader = try AVAssetReader(asset: asset)
         let track = asset.tracks(withMediaType: .video).first!
-        let samples = AVAssetReaderTrackOutput(track: track, outputSettings: nil)
-        reader.add(samples); precondition(reader.startReading())
+        // Compressed outputs can include marker-only buffers with zero samples.
+        // Count actual samples for diagnostics; a buffer is not a decoded frame.
+        let storedReader = try AVAssetReader(asset: asset)
+        let storedOutput = AVAssetReaderTrackOutput(track: track, outputSettings: nil)
+        precondition(storedReader.canAdd(storedOutput))
+        storedReader.add(storedOutput)
+        precondition(storedReader.startReading())
+        var storedBuffers = 0, storedSamples = 0, markers = 0
+        while let sample = storedOutput.copyNextSampleBuffer() {
+            let sampleCount = CMSampleBufferGetNumSamples(sample)
+            storedBuffers += 1
+            storedSamples += sampleCount
+            if sampleCount == 0 { markers += 1 }
+        }
+        precondition(storedReader.status == .completed,
+            "Compressed video read failed: \(String(describing: storedReader.error))")
+        print("MP4 stored output: \(storedBuffers) buffers, \(storedSamples) samples, \(markers) markers")
+
+        // Request decoded pixels and verify every frame and presentation time.
+        // This still fails if the encoder drops, duplicates or misorders frames.
+        let reader = try AVAssetReader(asset: asset)
+        let samples = AVAssetReaderTrackOutput(track: track, outputSettings: [
+            kCVPixelBufferPixelFormatTypeKey as String: Int(kCVPixelFormatType_32BGRA)
+        ])
+        precondition(reader.canAdd(samples))
+        reader.add(samples)
+        precondition(reader.startReading())
         var count = 0
-        while samples.copyNextSampleBuffer() != nil { count += 1 }
-        precondition(count == 33, "No decoded frames may silently disappear")
+        while let sample = samples.copyNextSampleBuffer() {
+            if CMSampleBufferGetNumSamples(sample) == 0 { continue }
+            guard let pixels = CMSampleBufferGetImageBuffer(sample) else {
+                fatalError("Decoded video sample has no pixel data")
+            }
+            precondition(CVPixelBufferGetWidth(pixels) == w && CVPixelBufferGetHeight(pixels) == h,
+                "Decoded frame dimensions changed")
+            let expectedTime = Double(count) / 16.0
+            let actualTime = CMSampleBufferGetPresentationTimeStamp(sample).seconds
+            precondition(abs(actualTime - expectedTime) < 0.002,
+                "Unexpected presentation time at frame \(count): \(actualTime), expected \(expectedTime)")
+            count += 1
+        }
+        precondition(reader.status == .completed,
+            "Video decoding failed: \(String(describing: reader.error))")
+        precondition(count == 33, "Expected 33 decoded frames, got \(count)")
+        print("PASS: exactly 33 decoded frames with pixels and ordered presentation times")
         for invalid in [Double.nan, -1] {
             do { _ = try MediaImport.referenceFromVideo(clip, seconds: invalid); fatalError("invalid reference time accepted") } catch { }
         }
