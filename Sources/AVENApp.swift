@@ -152,6 +152,12 @@ final class StudioModel: ObservableObject {
 
 struct StudioView: View {
     @EnvironmentObject var studio: StudioModel
+    @StateObject private var localAI = AVENLocalAI()
+    @State private var realismLevel = 5.0
+    @State private var fullPower = false
+    @State private var secondsToGenerate = 4.0
+    @State private var useReference = true
+    private let machine = AVENHardware.detect()
     private let accent = Color(red: 0.64, green: 0.43, blue: 1)
 
     var body: some View {
@@ -164,6 +170,7 @@ struct StudioView: View {
                     header
                     preview
                     controls
+                    aiControls
                     timeline
                     footer
                 }
@@ -195,7 +202,7 @@ struct StudioView: View {
             VStack(alignment: .leading, spacing: 10) {
                 Label("100 % lokale Verarbeitung", systemImage: "checkmark.shield.fill")
                     .font(.system(size: 12)).foregroundStyle(.green)
-                Text("Für Intel Mac · 16 GB RAM\nKeine Cloud · Keine API-Kosten")
+                Text(machine.architecture + " · " + String(machine.memoryGB) + " GB RAM\nKeine Cloud · Keine API-Kosten")
                     .font(.system(size: 11)).foregroundStyle(.secondary)
                     .fixedSize(horizontal: false, vertical: true)
             }
@@ -282,6 +289,90 @@ struct StudioView: View {
         }
         .padding(20)
         .background(.white.opacity(0.045), in: RoundedRectangle(cornerRadius: 17))
+    }
+
+    private var aiControls: some View {
+        let plan = AVENQualityPlan.make(for: machine, level: Int(realismLevel),
+                                        portrait: studio.format == .portrait, fullPower: fullPower, square: studio.format == .square)
+        return VStack(alignment: .leading, spacing: 14) {
+            HStack(spacing: 10) {
+                Image(systemName: "cpu.fill").foregroundStyle(accent)
+                Text("ADAPTIVE REALISM ENGINE · LOKALE KI")
+                    .font(.system(size: 12, weight: .bold)).tracking(1)
+            }
+            Text("Hardware erkannt: " + machine.label)
+                .font(.caption).foregroundStyle(.secondary)
+                .textSelection(.enabled)
+            HStack {
+                Text("Realismus / Rechenaufwand").fontWeight(.semibold)
+                Spacer()
+                Text("\(Int(realismLevel))/10" + (realismLevel >= 10 ? " · MAX REALISM" : ""))
+                    .foregroundStyle(accent).fontWeight(.bold)
+            }
+            Slider(value: $realismLevel, in: 1...10, step: 1)
+                .tint(accent)
+                .accessibilityLabel("Realismusstufe 1 bis 10")
+            HStack {
+                Text("Schneller Test").font(.caption2).foregroundStyle(.secondary)
+                Spacer()
+                Text("Maximale lokale Qualität").font(.caption2).foregroundStyle(.secondary)
+            }
+            Text(plan.shortDescription + " · Backend: " + plan.backend)
+                .font(.system(size: 12, design: .monospaced))
+                .foregroundStyle(.white.opacity(0.85))
+            Text(plan.caution).font(.caption).foregroundStyle(.orange)
+            Toggle("Volle Prozessorleistung verwenden", isOn: $fullPower)
+                .toggleStyle(.switch)
+            Toggle("Erstes importiertes Bild als Referenz verwenden", isOn: $useReference)
+                .toggleStyle(.switch)
+            HStack {
+                Text("Gesamtlänge der KI-Szenen").font(.caption)
+                Slider(value: $secondsToGenerate, in: 2...240, step: 2)
+                Text("\(Int(secondsToGenerate)) s").monospacedDigit().frame(width: 48)
+            }
+            let segmentCount = Int(ceil(secondsToGenerate / plan.clipSeconds))
+            Text("\(segmentCount) echte KI-Sequenzen geplant. Je nach Gerät können bereits einzelne Sequenzen viele Stunden benötigen. Fertige Szenen werden einzeln gespeichert.")
+                .font(.caption).foregroundStyle(.secondary)
+            HStack(spacing: 10) {
+                if localAI.isDownloading {
+                    ProgressView(value: localAI.downloadProgress)
+                    Button("Download abbrechen") { localAI.stopDownload() }
+                } else if !localAI.isReady {
+                    Button { localAI.installModels(useHighPrecision: plan.modelTier.hasPrefix("Q8")) } label: {
+                        Label("Kostenlose KI-Modelle herunterladen", systemImage: "arrow.down.circle")
+                    }.buttonStyle(.borderedProminent).tint(accent)
+                } else if localAI.isGenerating {
+                    ProgressView()
+                    Button("KI-Berechnung abbrechen") { localAI.cancelGeneration() }
+                    Button("Szenenordner anzeigen") { localAI.showWorkFolder() }
+                } else {
+                    Button {
+                        localAI.generateAdaptive(firstImage: useReference ? studio.scenes.first?.cgImage : nil,
+                                                 prompt: studio.prompt, format: studio.format,
+                                                 soundtrack: studio.soundtrack, plan: plan,
+                                                 targetSeconds: secondsToGenerate)
+                    } label: {
+                        Label("ECHTES KI-VIDEO GENERIEREN", systemImage: "sparkles.tv")
+                    }.buttonStyle(.borderedProminent).tint(accent)
+                    if localAI.resultURL != nil {
+                        Button("Fertiges Video anzeigen") { localAI.showResult() }
+                    }
+                    if localAI.canResume {
+                        Button("Letzten Auftrag fortsetzen") { localAI.resumeLastJob() }
+                    }
+                    if machine.memoryGB >= 48 && realismLevel >= 8 && !localAI.highPrecisionReady {
+                        Button("Q8-Qualitätsmodell nachladen") { localAI.installModels(useHighPrecision: true) }
+                    }
+                    Button("Szenenordner anzeigen") { localAI.showWorkFolder() }
+                }
+            }
+            Text(localAI.message).font(.caption).foregroundStyle(.secondary).textSelection(.enabled)
+            Text("Jeder Durchlauf erzeugt neue Modell-Frames; keine Zoomanimation. Max Realism ist ein Rechenprofil, kein Versprechen für perfekte Gesichter oder Filmqualität. Alle KI-Aufträge laufen nach Modelldownload ohne Netzwerk.")
+                .font(.system(size: 11)).foregroundStyle(.secondary)
+        }
+        .padding(20)
+        .background(.purple.opacity(0.08), in: RoundedRectangle(cornerRadius: 17))
+        .overlay(RoundedRectangle(cornerRadius: 17).strokeBorder(accent.opacity(0.25)))
     }
 
     private var timeline: some View {
