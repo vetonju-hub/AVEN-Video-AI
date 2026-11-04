@@ -1,0 +1,40 @@
+name: AVEN Windows CUDA
+on:
+  push:
+    branches: [main, "fix/**"]
+    paths: ["Windows/**", ".github/workflows/build-windows.yml", "Assets/**"]
+  pull_request:
+    paths: ["Windows/**", ".github/workflows/build-windows.yml", "Assets/**"]
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  windows:
+    name: Windows x64 CUDA App
+    runs-on: windows-2022
+    timeout-minutes: 60
+    defaults:
+      run:
+        working-directory: Windows
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12.10'
+          architecture: x64
+      - name: Python-Abhängigkeiten installieren
+        run: python -m pip install -r requirements-build.txt
+      - name: Geprüfte Engine und FFmpeg vorbereiten
+        run: python prepare_tests.py
+      - name: Windows-Logik und echte Medientests
+        run: python -m unittest discover -s tests -v
+      - name: Eigenständige App bauen und prüfen
+        run: python build.py
+      - name: Windows-App bereitstellen
+        uses: actions/upload-artifact@v4
+        with:
+          name: AVEN-v3.5-Windows-CUDA-x64
+          path: Windows/dist/AVEN-v3.5-Windows-CUDA-x64.zip
+          compression-level: 0
+          if-no-files-found: error
+          retention-days: 3

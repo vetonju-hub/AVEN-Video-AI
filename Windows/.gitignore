@@ -1,0 +1,11 @@
+__pycache__/
+*.pyc
+.cache/
+engine/
+build/
+build-dependencies/
+build-test-ffmpeg/
+dist/
+packaged-smoke/
+*.spec
+aven.ico
