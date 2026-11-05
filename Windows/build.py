@@ -3,6 +3,7 @@ import hashlib
 import json
 import os
 from pathlib import Path
+import re
 import shutil
 import subprocess
 import sys
@@ -27,6 +28,19 @@ def check_app(args, timeout):
             raise RuntimeError(f'{exc}\nPackaged startup traceback ({error}):\n{detail}') from exc
         raise
     print('Packaged check passed.',flush=True)
+
+
+def copy_msvc_runtime(vs,engine):
+    crts=list(Path(vs).glob('**/VC/Redist/MSVC/*/x64/Microsoft.VC*.CRT'))
+    if not crts: raise RuntimeError('Visual Studio x64 redistributable CRT fehlt im Build-Rechner.')
+    crt=max(crts,key=lambda p:tuple(int(x) for x in re.findall(r'\d+',p.resolve().parents[1].name)))
+    # OpenMP is a separate redistributable, not part of Microsoft.VC*.CRT.
+    sources=list(crt.glob('*.dll'))+list(crt.parent.glob('Microsoft.VC*.OpenMP/*.dll'))
+    required={'msvcp140.dll','msvcp140_codecvt_ids.dll','vcruntime140.dll','vcruntime140_1.dll','vcomp140.dll'}
+    missing=required-{p.name.lower() for p in sources}
+    if missing: raise RuntimeError('Visual Studio x64 Runtime unvollständig: '+', '.join(sorted(missing)))
+    for source in sources: shutil.copy2(source,Path(engine)/source.name)
+    print('Bundled x64 CRT and OpenMP:',crt.parent,flush=True)
 
 
 def build():
@@ -58,10 +72,8 @@ def build():
                 target=notices/tree.name/source.relative_to(tree); target.parent.mkdir(parents=True,exist_ok=True); shutil.copy2(source,target)
     # Use the Visual Studio redistributable CRT, not a user's System32 DLLs.
     vs=Path('C:/Program Files/Microsoft Visual Studio')
-    crts=sorted(vs.glob('**/VC/Redist/MSVC/*/x64/Microsoft.VC*.CRT'))
-    if not crts: raise RuntimeError('Visual Studio x64 redistributable CRT fehlt im Build-Rechner.')
-    for source in crts[-1].glob('*.dll'): shutil.copy2(source,engine/source.name)
-    for name in ['sd-cli.exe','ffmpeg.exe','ffprobe.exe','msvcp140.dll','vcruntime140.dll']:
+    copy_msvc_runtime(vs,engine)
+    for name in ['sd-cli.exe','ffmpeg.exe','ffprobe.exe','msvcp140.dll','msvcp140_codecvt_ids.dll','vcruntime140.dll','vcruntime140_1.dll','vcomp140.dll']:
         if not (engine/name).exists(): raise RuntimeError('Paket unvollständig: '+name)
     shutil.copy2(ROOT/'dependencies.lock.json',app/'dependencies.lock.json')
     shutil.copy2(ROOT/'README_DEUTSCH.md',app/'START_HIER.txt')
@@ -71,6 +83,7 @@ def build():
     check_app([app/'AVEN Video AI.exe','--self-test',smoke],timeout=300)
     check_app([app/'AVEN Video AI.exe','--gui-smoke'],timeout=60)
     result=json.loads((smoke/'self-test.json').read_text())
+    print('Packaged test results:',json.dumps(result),flush=True)
     if result['synthetic_media']!='passed': raise RuntimeError('Paket-Medientest fehlgeschlagen.')
     (app/'package-check.json').write_text(json.dumps(result,indent=2))
     (notices/'ffmpeg-buildconf.txt').write_text(run([engine/'ffmpeg.exe','-buildconf'],timeout=30),encoding='utf-8')

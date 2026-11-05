@@ -1,15 +1,38 @@
 """Packaged synthetic media smoke check. This never claims neural inference."""
 import json
+import os
 from pathlib import Path
 import tempfile
+import sys
 from PIL import Image,ImageDraw
 from .runtime import Cancellation, binary, run, atomic_json
 from .media import encode_scene, combine, validate_clip
 
 
+def engine_contract():
+    if sys.platform!='win32': return 'not_run_not_windows'
+    # This release imports nvcuda.dll directly, even for --help. It belongs to
+    # the installed NVIDIA driver, not to the redistributable CUDA runtime ZIP.
+    driver=Path(os.environ.get('WINDIR','C:/Windows'))/'System32/nvcuda.dll'
+    if not driver.is_file(): return 'not_run_no_nvidia_driver'
+    help_text=run([binary('sd-cli'),'--help'],timeout=60)
+    for flag in ['--backend','--params-backend','--video-frames','--flow-shift','--scheduler','--auto-fit','--temporal-tiling','--max-vram']:
+        if flag not in help_text: raise ValueError('Engine-Vertrag fehlt: '+flag)
+    return 'passed'
+
+
 def self_test(folder):
     from .models import selected
     if len(selected(1))!=3: raise ValueError('Gebündelte Modellquellen fehlen.')
+    support='not_run_not_windows'
+    if sys.platform=='win32':
+        import ctypes
+        directory=binary('sd-cli').parent
+        # These real dependencies need no NVIDIA device. Always load them,
+        # including OpenMP, even if the driver-dependent CLI cannot run in CI.
+        for name in ['ggml-base.dll','ggml.dll','libsharpyuv.dll','libwebp.dll','libwebpmux.dll','webm.dll']:
+            ctypes.WinDLL(str(directory/name),winmode=0x1100)
+        support='passed'
     folder=Path(folder); folder.mkdir(parents=True,exist_ok=True)
     from .i18n import Locale
     language=Locale(folder/'language-test.json'); language.select('en')
@@ -22,11 +45,8 @@ def self_test(folder):
         d.rectangle((0,0,63,31),fill='green'); d.rectangle((i,40,i+8,55),fill='blue'); im.save(p); files.append(p)
     clip=folder/'clip.mp4'; encode_scene(files,16,clip,Cancellation())
     result=folder/'fractional.mp4'; combine([clip],result,1.337,None,Cancellation()); validate_clip(result,1.337)
-    if __import__('os').name=='nt':
-        help_text=run([binary('sd-cli'),'--help'],timeout=60)
-        for flag in ['--backend','--params-backend','--video-frames','--flow-shift','--scheduler','--auto-fit','--temporal-tiling','--max-vram']:
-            if flag not in help_text: raise ValueError('Engine-Vertrag fehlt: '+flag)
-    atomic_json(folder/'self-test.json',{'synthetic_media':'passed','language_switch':'passed','neural_video':'not_run','cuda_inference':'not_run','frames':33,'fractional_seconds':1.337})
+    contract=engine_contract()
+    atomic_json(folder/'self-test.json',{'synthetic_media':'passed','language_switch':'passed','engine_support_dlls':support,'engine_cli':contract,'neural_video':'not_run','cuda_inference':'not_run','frames':33,'fractional_seconds':1.337})
 
 
 def gui_smoke(root,studio):

@@ -1,0 +1,106 @@
+{
+  "source": "PE import tables from SHA256-verified Windows engine/runtime release archives",
+  "engine_tag": "master-1043-3be2378",
+  "assets": [
+    {
+      "name": "engine.zip",
+      "url": "https://github.com/leejet/stable-diffusion.cpp/releases/download/master-1043-3be2378/sd-master-3be2378-bin-win-cuda12-x64.zip",
+      "sha256": "76da083337834ff9c383c5f80a49c8cf7485f8fa28d1fac1ef5ce057bbcb3e51"
+    },
+    {
+      "name": "cuda-runtime.zip",
+      "url": "https://github.com/leejet/stable-diffusion.cpp/releases/download/master-1043-3be2378/cudart-sd-bin-win-cu12-x64.zip",
+      "sha256": "fe20366827d357c00797eebb58244dddab7fd9a348d70090c3871004c320f38d"
+    }
+  ],
+  "imports": {
+    "sd-cli.exe": [
+      "stable-diffusion.dll",
+      "libwebpmux.dll",
+      "webm.dll",
+      "libwebp.dll",
+      "KERNEL32.dll",
+      "SHELL32.dll",
+      "MSVCP140.dll",
+      "MSVCP140_CODECVT_IDS.dll",
+      "VCRUNTIME140.dll",
+      "VCRUNTIME140_1.dll",
+      "api-ms-win-crt-runtime-l1-1-0.dll",
+      "api-ms-win-crt-filesystem-l1-1-0.dll",
+      "api-ms-win-crt-heap-l1-1-0.dll",
+      "api-ms-win-crt-string-l1-1-0.dll",
+      "api-ms-win-crt-stdio-l1-1-0.dll",
+      "api-ms-win-crt-math-l1-1-0.dll",
+      "api-ms-win-crt-convert-l1-1-0.dll",
+      "api-ms-win-crt-locale-l1-1-0.dll"
+    ],
+    "stable-diffusion.dll": [
+      "nvcuda.dll",
+      "cudart64_12.dll",
+      "cublas64_12.dll",
+      "ggml.dll",
+      "ggml-base.dll",
+      "KERNEL32.dll",
+      "MSVCP140.dll",
+      "MSVCP140_CODECVT_IDS.dll",
+      "VCRUNTIME140.dll",
+      "VCRUNTIME140_1.dll",
+      "api-ms-win-crt-runtime-l1-1-0.dll",
+      "api-ms-win-crt-filesystem-l1-1-0.dll",
+      "api-ms-win-crt-time-l1-1-0.dll",
+      "api-ms-win-crt-heap-l1-1-0.dll",
+      "api-ms-win-crt-string-l1-1-0.dll",
+      "api-ms-win-crt-stdio-l1-1-0.dll",
+      "api-ms-win-crt-convert-l1-1-0.dll",
+      "api-ms-win-crt-environment-l1-1-0.dll",
+      "api-ms-win-crt-math-l1-1-0.dll",
+      "api-ms-win-crt-locale-l1-1-0.dll",
+      "api-ms-win-crt-utility-l1-1-0.dll"
+    ],
+    "ggml-base.dll": [
+      "KERNEL32.dll",
+      "VCOMP140.DLL",
+      "MSVCP140.dll",
+      "VCRUNTIME140.dll",
+      "VCRUNTIME140_1.dll",
+      "api-ms-win-crt-runtime-l1-1-0.dll",
+      "api-ms-win-crt-stdio-l1-1-0.dll",
+      "api-ms-win-crt-heap-l1-1-0.dll",
+      "api-ms-win-crt-time-l1-1-0.dll",
+      "api-ms-win-crt-math-l1-1-0.dll",
+      "api-ms-win-crt-string-l1-1-0.dll",
+      "api-ms-win-crt-environment-l1-1-0.dll",
+      "api-ms-win-crt-convert-l1-1-0.dll",
+      "api-ms-win-crt-utility-l1-1-0.dll"
+    ],
+    "ggml-cuda.dll": [
+      "ggml-base.dll",
+      "cublasLt64_12.dll",
+      "cudart64_12.dll",
+      "cublas64_12.dll",
+      "nvcuda.dll",
+      "MSVCP140.dll",
+      "VCRUNTIME140_1.dll",
+      "VCRUNTIME140.dll",
+      "api-ms-win-crt-math-l1-1-0.dll",
+      "api-ms-win-crt-convert-l1-1-0.dll",
+      "api-ms-win-crt-environment-l1-1-0.dll",
+      "api-ms-win-crt-stdio-l1-1-0.dll",
+      "api-ms-win-crt-runtime-l1-1-0.dll",
+      "api-ms-win-crt-string-l1-1-0.dll",
+      "api-ms-win-crt-heap-l1-1-0.dll",
+      "KERNEL32.dll"
+    ]
+  },
+  "runtime_archive_files": [
+    "cublas64_12.dll",
+    "cublasLt64_12.dll",
+    "cudart64_12.dll"
+  ],
+  "findings": [
+    "VCOMP140.DLL is imported by ggml-base.dll and must be bundled from the Visual Studio OpenMP redistributable.",
+    "nvcuda.dll is imported directly by stable-diffusion.dll and must come from the installed NVIDIA system driver; the official CUDA runtime ZIP does not contain it."
+  ],
+  "native_run": 41944809640,
+  "native_result": "48 unit tests passed; frozen media/language checks reached engine --help, which exited 3221225781. Corrected native build still pending."
+}

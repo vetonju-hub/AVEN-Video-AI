@@ -1,7 +1,25 @@
-AVEN Video AI v3.4 – Update des bestehenden Projekts
+AVEN Video AI – Video fortsetzen und fester Avatar
 
-1. INSTALLATION_DEUTSCH.md lesen: enthält den Weg über GitHub Desktop ohne Terminalbefehle.
-2. PRUEFBERICHT.md zeigt, was getestet wurde und welche Mac-Prüfungen noch offen sind.
-3. Zuerst in der neuen App den Button „2-Sekunden-Qualitätstest“ ausführen.
+Das Update enthält beide Funktionen für Windows und macOS sowie die bisherige Startreparatur.
 
-Dieses Paket enthält Quellcode und Builddateien. Es enthält keinen bereits auf macOS geprüften Installer. GitHub hat die direkten Schreibzugriffe abgelehnt; daher ist das Repository noch nicht aktualisiert.
+Auf dem Mac ins bestehende GitHub-Projekt übernehmen
+
+1. Entpacke die ZIP und öffne den Ordner In_AVEN-Video-AI_kopieren.
+2. Öffne GitHub Desktop. Wähle AVEN-Video-AI und oben im Menü Repository → Show in Finder.
+3. Wechsle zum Paketordner In_AVEN-Video-AI_kopieren. Markiere seinen Inhalt mit ⌘ + A und kopiere ihn mit ⌘ + C. Wechsle zum eben geöffneten Projektordner AVEN-Video-AI und füge mit ⌘ + V ein. Bestätige Ersetzen bei den enthaltenen Dateien und Ordnern. Die im Update enthaltenen Ordner sind vollständig. Sichere zuerst eigene Änderungen, falls du in diesen Ordnern noch etwas bearbeitet hast.
+4. Wechsle zurück zu GitHub Desktop. Lass die Häkchen bei den Projektänderungen gesetzt. Falls .DS_Store angezeigt wird, lass diese Einträge aus. Gib bei Summary «AVEN Video und Avatar» ein, klicke auf Commit to main und dann auf Push origin.
+5. Öffne https://github.com/vetonju-hub/AVEN-Video-AI/actions und warte auf den grünen Haken des Laufs zu deinem Commit.
+
+Die fertige App herunterladen
+
+- Windows. Öffne den erfolgreichen Lauf AVEN Windows CUDA. Lade das Artifact AVEN-v3.5-Windows-CUDA-x64 herunter. Entpacke die äußere ZIP und die innere ZIP. Öffne AVEN Video AI.exe auf dem Windows-PC und behalte den gesamten App-Ordner zusammen.
+- Mac. Öffne den erfolgreichen Mac-Lauf. Für deinen Intel-Mac wähle das Artifact mit x86_64. Für Apple Silicon wähle arm64. Entpacke das Artifact und öffne die DMG-Datei.
+
+Dein erster Test
+
+1. Wähle in AVEN unter Video fortsetzen einen kurzen Clip.
+2. Schreibe in die Szenenbeschreibung, was als Nächstes passieren soll. Zum Beispiel «The same person turns toward the camera and waves, with the same lighting and outfit.»
+3. Stelle die zusätzliche Länge auf 2 Sekunden und den Realismus auf Stufe 1. Starte die KI-Generierung und öffne die MP4. Sie enthält zuerst den importierten Clip mit Ton. Die Fortsetzung folgt danach. Neu hinzugefügte Musik spielt im neuen Teil.
+4. Wähle ein Avatarbild, etwa ein PNG oder JPG mit einer gut sichtbaren Figur. Aktiviere die Verwendung in jeder KI-Szene. AVEN speichert die Vorlage auf dem Gerät. Du kannst das Bild später austauschen oder entfernen. Die Ähnlichkeit der erzeugten Figur hängt vom Modell ab.
+
+Die Tests haben Import, Export, Ton und das Fortsetzen eines Auftrags mit Testbildern geprüft. Native Windows- und macOS-Builds sowie eine echte KI-Fortsetzung auf der RTX 3080 stehen für diesen Stand aus.

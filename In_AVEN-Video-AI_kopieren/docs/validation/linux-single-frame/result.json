@@ -1,0 +1,20 @@
+{
+  "verified_at": "2026-11-03T18:59:24.920767+01:00",
+  "engine_commit": "d30854463dbc75fb3671209b79016bb0d8ac321e",
+  "platform": "Linux x86_64 CPU (not macOS)",
+  "exit_code": 0,
+  "wall_seconds": 2543,
+  "width": 832,
+  "height": 480,
+  "generated_frames": 1,
+  "steps": 20,
+  "cfg": 5,
+  "flow_shift": 16,
+  "sampler": "euler",
+  "scheduler": "discrete",
+  "seed": 42,
+  "threads": 4,
+  "weights": "Wan2.1 VACE V3 Q4, UMT5 Q3, Wan2.1 VAE",
+  "png_sha256": "0621aa47fb0f57d88affc0890b7cd1bbf47786e2af3fd64317df68b4e025a734",
+  "limitation": "Single image only; no video motion, no macOS build/runtime verification."
+}
