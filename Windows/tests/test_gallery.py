@@ -47,13 +47,14 @@ class GalleryTests(unittest.TestCase):
             root=Path(temporary); scene=root/'scene_000001'; scene.mkdir()
             f=scene/'generated_000.png'; Image.new('RGB',(8,8)).save(f)
             Image.new('RGB',(8,8)).save(scene/'unrelated.png')
-            self.assertEqual(scene_frames(root,1),[f])
+            # The gallery returns canonical paths; Windows TEMP may use an 8.3 alias.
+            self.assertEqual(scene_frames(root,1),[f.resolve()])
             with self.assertRaises(ValueError): scene_frames(root,-1)
             with self.assertRaises(ValueError): reference_path(root,{'references':['../outside.png']},0)
             outside=root.parent/(root.name+'-outside.png'); Image.new('RGB',(8,8)).save(outside)
             try:
                 (scene/'generated_001.png').symlink_to(outside)
-                self.assertEqual(scene_frames(root,1),[f])
+                self.assertEqual(scene_frames(root,1),[f.resolve()])
             finally: outside.unlink()
 
     def test_live_status_templates_translate_and_unknown_eta_stays_unknown(self):
