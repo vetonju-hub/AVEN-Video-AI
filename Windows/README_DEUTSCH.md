@@ -18,6 +18,17 @@ Oben im Fenster stehen die beiden Schaltflächen **Deutsch** und **English**. Ei
 
 Wenn Windows die noch nicht kommerziell signierte App überprüft, Herausgeber, Download und Prüfprotokoll kontrollieren. Keine Windows-Sicherheitsfunktionen global abschalten.
 
+## Video fortsetzen und Avatar verwenden
+
+1. Unter **Video fortsetzen** auf **Clip auswählen** klicken und das Video öffnen.
+2. Unter **Szenenbeschreibung** eingeben, was danach passieren soll. Für den ersten Versuch **Zusätzliche Länge (Sekunden)** auf `2` und Realismus auf Stufe `1` setzen.
+3. Bei Bedarf unter **Fester Avatar** ein Bild auswählen und **Gespeicherten Avatar für alle Szenen verwenden** aktivieren. Das Bild steht auch beim nächsten App-Start zur Verfügung.
+4. **KI-Video generieren** starten und nach Abschluss **KI-Vorschau öffnen** wählen.
+
+AVEN verwendet die letzten vier Bilder des Clips für den Übergang. Die exportierte MP4 beginnt mit dem Originalinhalt und seinem Ton und hängt die neue Handlung an. Das gewählte Format gilt für den gesamten Export. Importierte Musik und die Längeneinstellung gelten für den angehängten Teil. Die Quelldatei bleibt erhalten.
+
+Das Avatarbild hat Vorrang vor anderen Motivbildern und kann auch ohne Fortsetzungsclip verwendet werden. Das Modell kann Gesicht, Kleidung und Übergänge unterschiedlich darstellen. Gespeicherte Aufträge behalten ihre jeweilige Kopie der Referenz.
+
 ## Eigene Videos
 
 Mehrzeiligen englischen Prompt, negativen Prompt, Seed und Format wählen. Fotos werden mit EXIF-Ausrichtung übernommen. **Video als Referenz** extrahiert pro Video ein Bild zur eingestellten Zeit; es überträgt keine Originalbewegung. Standardmäßig wird die erste Referenz als Hauptmotiv in allen Szenen verwendet. Mit **Als Hauptmotiv wählen** die ausgewählte Referenz an die erste Stelle setzen. Den festen Modus ausschalten, damit Referenzen je Szene wechseln. Identische Gesichter sind dadurch nicht garantiert.
@@ -39,6 +50,8 @@ Diffusion läuft ausdrücklich auf **CUDA0**, Textencoder und VAE auf CPU/RAM. S
 Der Quellcode enthält vollständige Oberfläche, Auftragspipeline, Modellverwaltung, Medienexport und Windows-Build. Lokale Tests laufen auf Linux mit echten PNGs, MP4s und Musik sowie einer ausdrücklich synthetischen Engine-Testfixture. Sie beweisen keine Windows-Ausführung und keine CUDA-Modellgenerierung.
 
 Der Windows-Workflow prüft diese Tests auf Windows, erzeugt die portable EXE und startet die gebündelte App für Medien- und GUI-Smoketests. Ein normaler GitHub-Runner hat keine RTX 3080; die echte CUDA-Berechnung und Bildqualität müssen anschließend auf deinem PC geprüft werden. Ein Installer wird erst als vorhanden bezeichnet, wenn der Windows-Lauf und der Artifact-Upload tatsächlich erfolgreich waren.
+
+Das Paket enthält die x64-CRT- und OpenMP-Bibliotheken aus dem Visual-Studio-Redistributable. Der Paketselbsttest lädt die treiberunabhängigen Engine-DLLs auch auf einem Rechner ohne Grafikkarte; Fehler stoppen den Build. Die CUDA-Engine selbst importiert den NVIDIA-Systemtreiber `nvcuda.dll` bereits beim CLI-Hilfeaufruf. Fehlt dieser Treiber auf dem Build-Rechner, steht im Prüfbericht ausdrücklich `engine_cli: not_run_no_nvidia_driver`. Das ersetzt keinen CUDA-Test. Auf dem RTX-PC prüft **NVIDIA prüfen** den installierten Treiber und die CUDA-Geräte; die echte Generierung benötigt weiterhin diesen Systemtreiber.
 
 Für Entwickler: `python -m pip install -r requirements-build.txt`, `python -m unittest discover -s tests -v`, anschließend auf Windows `python build.py`. Diese Befehle sind nicht zur Bedienung der fertig gebauten App nötig.
 

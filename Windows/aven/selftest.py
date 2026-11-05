@@ -16,7 +16,7 @@ def engine_contract():
     driver=Path(os.environ.get('WINDIR','C:/Windows'))/'System32/nvcuda.dll'
     if not driver.is_file(): return 'not_run_no_nvidia_driver'
     help_text=run([binary('sd-cli'),'--help'],timeout=60)
-    for flag in ['--backend','--params-backend','--video-frames','--flow-shift','--scheduler','--auto-fit','--temporal-tiling','--max-vram']:
+    for flag in ['--backend','--params-backend','--video-frames','--flow-shift','--scheduler','--auto-fit','--temporal-tiling','--max-vram','--control-video']:
         if flag not in help_text: raise ValueError('Engine-Vertrag fehlt: '+flag)
     return 'passed'
 
@@ -52,9 +52,11 @@ def self_test(folder):
 def gui_smoke(root,studio):
     """Native Windows CI uses actual widgets/buttons; no user's settings are written."""
     from .i18n import Locale, message
+    from .media import save_avatar
     from tkinter import ttk
     original_path=studio.language.path
     original_code=studio.language.code
+    original_avatar=studio.avatar_path
     try:
         with tempfile.TemporaryDirectory() as temporary:
             studio.language.path=Path(temporary)/'settings.json'
@@ -67,6 +69,8 @@ def gui_smoke(root,studio):
             assert Locale(studio.language.path).code=='en'
             assert studio.status.get()=='Scene 3 saved.'
             assert any(str(w.cget('text'))=='Add music' for w in studio.controls if 'text' in w.keys())
+            assert any(str(w.cget('text'))=='Select clip' for w in studio.controls if 'text' in w.keys())
+            assert any(str(w.cget('text'))=='Select avatar image' for w in studio.controls if 'text' in w.keys())
             assert studio.prompt.get('1.0','end').strip()=='My own prompt ü {keep}'
             assert studio.seed.get()=='12345' and studio.seconds.get()=='5.375'
             assert [str(widget.cget('state')) for widget in studio.controls]==before
@@ -84,6 +88,15 @@ def gui_smoke(root,studio):
             from .studio_panels import show_report
             jobs=Path(temporary)/'Jobs'
             ref=Path(temporary)/'ref.png'; Image.new('RGB',(64,32),'red').save(ref)
+            studio.set_source_video(Path(temporary)/'Mein Clip.mp4')
+            assert studio.duration_label.get()=='Zusätzliche Länge (Sekunden)'
+            assert studio.source_label.get().endswith('Mein Clip.mp4')
+            assert studio.seconds.get()=='5.375' and studio.prompt.get('1.0','end').strip()=='My own prompt ü {keep}'
+            studio.set_source_video(None)
+            assert studio.duration_label.get()=='Eigene Länge (Sekunden)'
+            studio.avatar_path=Path(temporary)/'avatar.png'; save_avatar(ref,studio.avatar_path,Cancellation())
+            studio.refresh_avatar(); assert studio.avatar_photo is not None and studio.avatar_label.get()=='Avatar gespeichert.'
+            studio.remove_avatar(); assert studio.avatar_photo is None and not studio.avatar_path.exists()
             job=create_job(jobs,Plan.make(1,'16:9'),'test','',42,2,[(ref,0)],None,Cancellation())
             scene=job/'scene_000001'; scene.mkdir()
             for i in range(2):
@@ -113,3 +126,4 @@ def gui_smoke(root,studio):
     finally:
         studio.language.path=original_path
         studio.language.code=original_code
+        studio.avatar_path=original_avatar

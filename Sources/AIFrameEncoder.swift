@@ -6,8 +6,16 @@ import ImageIO
 
 /// Encode the original pixels without scaling, interpolation or skipped corrupt frames.
 enum AIFrameEncoder {
+    struct Continuation {
+        let source: URL
+        let width: Int
+        let height: Int
+        let fps: Int
+    }
+
     static func encode(images: [URL], fps: Int, output: URL,
-                       cancellation: RenderCancellation = RenderCancellation()) throws {
+                       cancellation: RenderCancellation = RenderCancellation(),
+                       onFrameSubmitted: (Int) -> Void = { _ in }) throws {
         guard images.count >= 2, fps > 0,
               let source = CGImageSourceCreateWithURL(images[0] as CFURL, nil),
               let first = CGImageSourceCreateImageAtIndex(source, 0, nil) else {
@@ -77,6 +85,7 @@ enum AIFrameEncoder {
                 guard adapter.append(buffer, withPresentationTime: CMTime(value: Int64(index), timescale: Int32(fps))) else {
                     throw writer.error ?? GenerationError.invalid("Frame konnte nicht geschrieben werden.")
                 }
+                onFrameSubmitted(index + 1)
             }
             writer.endSession(atSourceTime: CMTime(value: Int64(images.count), timescale: Int32(fps)))
             input.markAsFinished()
@@ -86,7 +95,9 @@ enum AIFrameEncoder {
             try cancellation.check()
             guard writer.status == .completed else { throw writer.error ?? GenerationError.invalid("Videoabschluss fehlgeschlagen.") }
             try validateClip(temporary, expectedDuration: Double(images.count) / Double(fps))
-            try FileManager.default.moveItem(at: temporary, to: output)
+            guard try cancellation.commitIfActive({
+                try FileManager.default.moveItem(at: temporary, to: output)
+            }) else { throw RenderCancellation.Cancelled() }
         } catch {
             writer.cancelWriting()
             throw error
@@ -103,41 +114,77 @@ enum AIFrameEncoder {
     }
 
     static func combine(clips: [URL], output: URL, limit: Double, soundtrack: URL?,
+                        continuation: Continuation? = nil,
                         cancellation: RenderCancellation = RenderCancellation()) throws {
         _ = try VideoTiming.resolve(manual: limit, music: nil, matchMusic: false)
         try cancellation.check()
+        let original = try continuation.map { try MediaImport.continuationAsset($0.source) }
+        let added = CMTime(seconds: limit, preferredTimescale: 48_000)
+        let cut = original?.range.duration ?? .zero
+        let total = CMTimeAdd(cut, added)
         let composition = AVMutableComposition()
         guard let video = composition.addMutableTrack(withMediaType: .video, preferredTrackID: kCMPersistentTrackID_Invalid) else {
             throw GenerationError.invalid("Videospur konnte nicht angelegt werden.")
         }
-        let total = CMTime(seconds: limit, preferredTimescale: 48_000)
-        var cursor = CMTime.zero
+        var videoComposition: AVVideoComposition?
+        if let continuation = continuation, let original = original {
+            guard let prefix = composition.addMutableTrack(withMediaType: .video, preferredTrackID: kCMPersistentTrackID_Invalid) else {
+                throw GenerationError.invalid("Original-Videospur konnte nicht angelegt werden.")
+            }
+            try prefix.insertTimeRange(original.range, of: original.track, at: .zero)
+            let canvas = CGSize(width: continuation.width, height: continuation.height)
+            let fitted = try MediaImport.fittedTransform(naturalSize: original.track.naturalSize,
+                preferredTransform: original.track.preferredTransform, canvas: canvas)
+            let originalInstruction = instruction(for: prefix, transform: fitted, range: CMTimeRange(start: .zero, duration: cut))
+            let addedInstruction = instruction(for: video, transform: .identity, range: CMTimeRange(start: cut, duration: added))
+            let rendered = AVMutableVideoComposition()
+            rendered.renderSize = canvas
+            let nominal = Double(original.track.nominalFrameRate)
+            let sourceFPS = nominal.isFinite ? Int(min(60, max(0, ceil(nominal)))) : 0
+            rendered.frameDuration = CMTime(value: 1, timescale: Int32(max(continuation.fps, sourceFPS)))
+            rendered.instructions = [originalInstruction, addedInstruction]
+            videoComposition = rendered
+        }
+        var cursor = cut
         for clip in clips {
             try cancellation.check()
             if CMTimeCompare(cursor, total) >= 0 { break }
             let asset = AVURLAsset(url: clip, options: [AVURLAssetPreferPreciseDurationAndTimingKey: true])
-            guard let source = asset.tracks(withMediaType: .video).first, source.timeRange.duration.seconds > 0 else {
+            guard let source = asset.tracks(withMediaType: .video).first,
+                  source.timeRange.duration.seconds.isFinite, source.timeRange.duration.seconds > 0 else {
                 throw GenerationError.invalid("Keine Videospur: \(clip.lastPathComponent)")
             }
             let remain = CMTimeSubtract(total, cursor)
             let amount = CMTimeMinimum(source.timeRange.duration, remain)
             try video.insertTimeRange(CMTimeRange(start: source.timeRange.start, duration: amount), of: source, at: cursor)
-            video.preferredTransform = source.preferredTransform
+            if continuation == nil { video.preferredTransform = source.preferredTransform }
             cursor = CMTimeAdd(cursor, amount)
         }
-        guard abs(cursor.seconds - limit) < 1.0 / 48_000 else {
+        guard abs(CMTimeSubtract(cursor, total).seconds) < 1.0 / 48_000 else {
             throw GenerationError.invalid("Die fertigen KI-Szenen decken die gewünschte Länge noch nicht vollständig ab.")
         }
-        if let sound = soundtrack {
-            let asset = AVURLAsset(url: sound, options: [AVURLAssetPreferPreciseDurationAndTimingKey: true])
-            guard let source = asset.tracks(withMediaType: .audio).first,
-                  let audio = composition.addMutableTrack(withMediaType: .audio, preferredTrackID: kCMPersistentTrackID_Invalid),
-                  source.timeRange.duration.seconds.isFinite, source.timeRange.duration.seconds > 0 else {
-                throw GenerationError.invalid("Musikdatei fehlt oder enthält keine lesbare Audiospur.")
+        let originalAudio = original?.asset.tracks(withMediaType: .audio).first
+        if originalAudio != nil || soundtrack != nil {
+            guard let audio = composition.addMutableTrack(withMediaType: .audio, preferredTrackID: kCMPersistentTrackID_Invalid) else {
+                throw GenerationError.invalid("Audiospur konnte nicht angelegt werden.")
             }
-            // Preserve the original speed. No looping; manual videos longer than the song end in silence.
-            let amount = CMTimeMinimum(total, source.timeRange.duration)
-            try audio.insertTimeRange(CMTimeRange(start: source.timeRange.start, duration: amount), of: source, at: .zero)
+            if let source = originalAudio, let original = original {
+                let range = CMTimeRangeGetIntersection(source.timeRange, original.range)
+                if range.duration.seconds > 0 {
+                    let offset = CMTimeSubtract(range.start, original.range.start)
+                    try audio.insertTimeRange(range, of: source, at: offset)
+                }
+            }
+            if let sound = soundtrack {
+                let asset = AVURLAsset(url: sound, options: [AVURLAssetPreferPreciseDurationAndTimingKey: true])
+                guard let source = asset.tracks(withMediaType: .audio).first,
+                      source.timeRange.duration.seconds.isFinite, source.timeRange.duration.seconds > 0 else {
+                    throw GenerationError.invalid("Musikdatei fehlt oder enthält keine lesbare Audiospur.")
+                }
+                // The selected music starts at the cut and plays once at its original speed.
+                let amount = CMTimeMinimum(added, source.timeRange.duration)
+                try audio.insertTimeRange(CMTimeRange(start: source.timeRange.start, duration: amount), of: source, at: cut)
+            }
         }
         let temporary = output.deletingLastPathComponent().appendingPathComponent(".combine-\(UUID().uuidString).mp4")
         defer { try? FileManager.default.removeItem(at: temporary) }
@@ -147,6 +194,7 @@ enum AIFrameEncoder {
         exporter.outputURL = temporary
         exporter.outputFileType = .mp4
         exporter.timeRange = CMTimeRange(start: .zero, duration: total)
+        exporter.videoComposition = videoComposition
         let done = DispatchSemaphore(value: 0)
         exporter.exportAsynchronously { done.signal() }
         while done.wait(timeout: .now() + 0.1) == .timedOut {
@@ -154,7 +202,19 @@ enum AIFrameEncoder {
         }
         try cancellation.check()
         guard exporter.status == .completed else { throw exporter.error ?? GenerationError.invalid("MP4-Export fehlgeschlagen.") }
-        try validateClip(temporary, expectedDuration: limit)
-        try FileManager.default.moveItem(at: temporary, to: output)
+        try validateClip(temporary, expectedDuration: total.seconds)
+        guard try cancellation.commitIfActive({
+            try FileManager.default.moveItem(at: temporary, to: output)
+        }) else { throw RenderCancellation.Cancelled() }
+    }
+
+    private static func instruction(for track: AVAssetTrack, transform: CGAffineTransform,
+                                    range: CMTimeRange) -> AVMutableVideoCompositionInstruction {
+        let layer = AVMutableVideoCompositionLayerInstruction(assetTrack: track)
+        layer.setTransform(transform, at: range.start)
+        let instruction = AVMutableVideoCompositionInstruction()
+        instruction.timeRange = range
+        instruction.layerInstructions = [layer]
+        return instruction
     }
 }

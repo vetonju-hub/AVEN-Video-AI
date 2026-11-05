@@ -269,7 +269,7 @@ final class AVENLocalAI: NSObject, ObservableObject, URLSessionDownloadDelegate 
 
     func generateAdaptive(references: [CGImage], prompt: String, negativePrompt: String,
                           seed: Int64, format: VideoFormat, soundtrack: URL?,
-                          plan: AVENQualityPlan, targetSeconds: Double) {
+                          plan: AVENQualityPlan, targetSeconds: Double, avatar: CGImage? = nil, sourceVideo: URL? = nil) {
         guard !isDownloading && !isGenerating else { return }
         updateAvailability()
         guard isReady else { message = corruptModelDescription() ?? "Bitte erst KI-Modelle herunterladen."; return }
@@ -305,11 +305,31 @@ final class AVENLocalAI: NSObject, ObservableObject, URLSessionDownloadDelegate 
             do {
                 try FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
                 var imageNames: [String] = []
-                for (i, image) in references.enumerated() {
+                if avatar == nil {
+                    for (i, image) in references.enumerated() {
+                        try token.check()
+                        let name = String(format: "reference_%03d.png", i)
+                        try MediaImport.writePNG(image, to: folder.appendingPathComponent(name))
+                        imageNames.append(name)
+                    }
+                }
+                var avatarName: String?
+                if let avatar = avatar {
                     try token.check()
-                    let name = String(format: "reference_%03d.png", i)
-                    try MediaImport.writePNG(image, to: folder.appendingPathComponent(name))
-                    imageNames.append(name)
+                    let name = "avatar.png"
+                    try MediaImport.writePNG(avatar, to: folder.appendingPathComponent(name))
+                    avatarName = name
+                }
+                var sourceVideoName: String?
+                if let sourceVideo = sourceVideo {
+                    try token.check()
+                    let file = sourceVideo.resolvingSymlinksInPath()
+                    let name = file.pathExtension.isEmpty ? "source-video" : "source-video." + file.pathExtension
+                    let snapshot = folder.appendingPathComponent(name)
+                    try FileManager.default.copyItem(at: file, to: snapshot)
+                    try token.check()
+                    _ = try MediaImport.continuationAsset(snapshot)
+                    sourceVideoName = name
                 }
                 var audioName: String?
                 if let sound = soundtrack {
@@ -320,9 +340,11 @@ final class AVENLocalAI: NSObject, ObservableObject, URLSessionDownloadDelegate 
                 }
                 try token.check()
                 try self.verifyModels(useQ8: policy.useQ8, cancellation: token)
-                let manifest = AIJobManifest(version: 4, prompt: text, negativePrompt: negativePrompt, seed: seed,
+                let version = avatarName == nil && sourceVideoName == nil ? 4 : 5
+                let manifest = AIJobManifest(version: version, prompt: text, negativePrompt: negativePrompt, seed: seed,
                     targetSeconds: targetSeconds, plan: policy, format: format.rawValue, referenceName: nil,
-                    referenceNames: imageNames, soundtrackPath: audioName, completed: 0, created: Date())
+                    referenceNames: imageNames, soundtrackPath: audioName, avatarName: avatarName,
+                    sourceVideoName: sourceVideoName, completed: 0, created: Date())
                 try self.save(manifest, to: folder)
                 DispatchQueue.main.async {
                     guard self.operationID == id else { return }
@@ -335,6 +357,10 @@ final class AVENLocalAI: NSObject, ObservableObject, URLSessionDownloadDelegate 
                     self.launchNextScene()
                 }
             } catch {
+                // The folder is unique to this attempt. A failed preparation has no resumable manifest.
+                if !FileManager.default.fileExists(atPath: folder.appendingPathComponent("job.json").path) {
+                    try? FileManager.default.removeItem(at: folder)
+                }
                 DispatchQueue.main.async {
                     guard self.operationID == id else { return }
                     self.backgroundWork = false
@@ -388,6 +414,9 @@ final class AVENLocalAI: NSObject, ObservableObject, URLSessionDownloadDelegate 
                     try token.check()
                     _ = try MediaImport.decodeImage(folder.appendingPathComponent(name))
                 }
+                try token.check()
+                if let name = job.avatarName { _ = try MediaImport.decodeImage(folder.appendingPathComponent(name)) }
+                if let name = job.sourceVideoName { _ = try MediaImport.continuationAsset(folder.appendingPathComponent(name)) }
                 if let name = job.soundtrackPath { _ = try MediaImport.audioDuration(folder.appendingPathComponent(name)) }
                 try self.verifyModels(useQ8: job.plan.useQ8, cancellation: token)
                 for index in 0..<job.completed {
@@ -422,45 +451,76 @@ final class AVENLocalAI: NSObject, ObservableObject, URLSessionDownloadDelegate 
         if job.completed >= total { finalize(job: job, folder: folder); return }
         let index = job.completed
         let segmentFolder = folder.appendingPathComponent(String(format: "scene_%03d", index + 1), isDirectory: true)
-        let args: [String]
         let selectedModel = job.plan.useQ8 ? q8 : q4
         let selectedText = job.plan.useQ8 ? t5Q5 : t5Q3
-        do {
-            // Only the unfinished scene is retried. Remove its partial output so stale
-            // PNGs/MP4s cannot be mixed with newly generated frames.
-            if FileManager.default.fileExists(atPath: segmentFolder.path) {
-                let archive = folder.appendingPathComponent(segmentFolder.lastPathComponent + "-interrupted-" + UUID().uuidString)
-                try FileManager.default.moveItem(at: segmentFolder, to: archive)
+        let token = cancellation
+        let id = operationID
+        backgroundWork = true
+        if job.sourceVideoName != nil { message = "Videobilder für KI-Szene \(index + 1)/\(total) vorbereiten …" }
+        DispatchQueue.global(qos: .utility).async {
+            do {
+                try token.check()
+                // Retry only the unfinished scene; archive its partial output for diagnostics.
+                if FileManager.default.fileExists(atPath: segmentFolder.path) {
+                    let archive = folder.appendingPathComponent(segmentFolder.lastPathComponent + "-interrupted-" + UUID().uuidString)
+                    try FileManager.default.moveItem(at: segmentFolder, to: archive)
+                }
+                try FileManager.default.createDirectory(at: segmentFolder, withIntermediateDirectories: true)
+                var reference = job.reference(at: index).map { folder.appendingPathComponent($0).path }
+                if let ref = reference, !FileManager.default.fileExists(atPath: ref) {
+                    throw GenerationError.invalid("Gespeichertes Referenzbild fehlt.")
+                }
+                var controlVideo: String?
+                if let controlSource = job.controlSource(at: index) {
+                    let directory = segmentFolder.appendingPathComponent("control", isDirectory: true)
+                    let frames = try MediaImport.writeContinuationFrames(from: folder.appendingPathComponent(controlSource), to: directory,
+                        width: job.plan.width, height: job.plan.height, fps: job.plan.fps, cancellation: token)
+                    if reference == nil { reference = frames.last?.path }
+                    controlVideo = directory.path
+                }
+                try token.check()
+                let args = try GenerationPolicy.arguments(plan: job.plan, prompt: job.prompt,
+                    negativePrompt: job.negativePrompt ?? GenerationPolicy.defaultNegative,
+                    seed: GenerationPolicy.sceneSeed(base: job.seed ?? 42, index: index),
+                    model: self.modelDirectory.appendingPathComponent(selectedModel.name).path,
+                    textEncoder: self.modelDirectory.appendingPathComponent(selectedText.name).path,
+                    vae: self.modelDirectory.appendingPathComponent(self.vae.name).path, reference: reference,
+                    output: segmentFolder.appendingPathComponent("generated_%03d.png").path, controlVideo: controlVideo)
+                let json = try JSONSerialization.data(withJSONObject: ["executable": engine.path, "arguments": args], options: [.prettyPrinted, .sortedKeys])
+                try json.write(to: segmentFolder.appendingPathComponent("command.json"))
+                DispatchQueue.main.async {
+                    guard self.operationID == id else { return }
+                    self.backgroundWork = false
+                    if token.isCancelled { self.isGenerating = false; self.message = "Angehalten. Auftrag gespeichert."; return }
+                    self.startScene(job: job, folder: folder, segmentFolder: segmentFolder, engine: engine, args: args,
+                        selectedModel: selectedModel, selectedText: selectedText)
+                }
+            } catch {
+                DispatchQueue.main.async {
+                    guard self.operationID == id else { return }
+                    self.backgroundWork = false
+                    self.isGenerating = false
+                    self.message = "Szene nicht gestartet: \(error.localizedDescription)"
+                }
             }
-            try FileManager.default.createDirectory(at: segmentFolder, withIntermediateDirectories: true)
-            let reference = job.reference(at: index).map { folder.appendingPathComponent($0).path }
-            if let ref = reference, !FileManager.default.fileExists(atPath: ref) {
-                throw GenerationError.invalid("Gespeichertes Referenzbild fehlt.")
-            }
-            args = try GenerationPolicy.arguments(plan: job.plan, prompt: job.prompt,
-                negativePrompt: job.negativePrompt ?? GenerationPolicy.defaultNegative,
-                seed: GenerationPolicy.sceneSeed(base: job.seed ?? 42, index: index),
-                model: modelDirectory.appendingPathComponent(selectedModel.name).path,
-                textEncoder: modelDirectory.appendingPathComponent(selectedText.name).path,
-                vae: modelDirectory.appendingPathComponent(vae.name).path, reference: reference,
-                output: segmentFolder.appendingPathComponent("generated_%03d.png").path)
-            let json = try JSONSerialization.data(withJSONObject: ["executable": engine.path, "arguments": args], options: [.prettyPrinted, .sortedKeys])
-            try json.write(to: segmentFolder.appendingPathComponent("command.json"))
-        } catch { isGenerating = false; message = error.localizedDescription; return }
+        }
+    }
+
+    private func startScene(job: AIJobManifest, folder: URL, segmentFolder: URL, engine: URL, args: [String],
+                            selectedModel: Weight, selectedText: Weight) {
         let id = operationID
         let proc = Process()
         proc.executableURL = engine
         proc.currentDirectoryURL = segmentFolder
         proc.arguments = args
-        let sceneNumber = index + 1
-        message = "KI Szene \(sceneNumber)/\(total) läuft. Vollständiges engine.log wird im Szenenordner gespeichert."
+        message = "KI Szene \(job.completed + 1)/\(job.totalScenes) läuft. Vollständiges engine.log wird im Szenenordner gespeichert."
         let logURL = segmentFolder.appendingPathComponent("engine.log")
         let header = "AVEN KI Diagnose\nArchitektur: \(AVENHardware.detect().architecture), RAM: \(AVENHardware.detect().memoryGB) GB\n" +
             "Modell: \(selectedModel.name), Textencoder: \(selectedText.name)\n" +
             "Modellgroessen (Bytes): VACE=\(sizeOf(selectedModel)), UMT5=\(sizeOf(selectedText)), VAE=\(sizeOf(vae))\n" +
             "Schritte=\(job.plan.steps), CFG=\(job.plan.cfg), Flow-Shift=\(job.plan.flowShift), FPS=\(job.plan.fps)\n" +
             "Engine-Revision: \((try? String(contentsOf: engine.deletingLastPathComponent().appendingPathComponent("upstream-commit.txt"), encoding: .utf8)) ?? "unbekannt")\n" +
-            "Backend=\(job.plan.backend), Aufloesung=\(job.plan.width)x\(job.plan.height), Frames=\(job.plan.frames)\n" +
+            "Backend=\(job.plan.backend), Aufloesung=\(job.plan.width)x\(job.plan.height), Frames=\(job.modelFrameCount), Kontextframes=\(job.contextFrameCount)\n" +
             "Ausfuehrbare Datei: \(engine.path)\n--- CLI-Ausgabe ---\n"
         do {
             try Data(header.utf8).write(to: logURL, options: .atomic)
@@ -511,7 +571,8 @@ final class AVENLocalAI: NSObject, ObservableObject, URLSessionDownloadDelegate 
             do {
                 try token.check()
                 let files = try FileManager.default.contentsOfDirectory(at: segmentFolder, includingPropertiesForKeys: nil)
-                let frames = try GeneratedFrameSet.ordered(files: files, expectedCount: job.plan.frames)
+                let frames = try GeneratedFrameSet.ordered(files: files, expectedCount: job.modelFrameCount,
+                    droppingFirst: job.contextFrameCount)
                 let report = try FrameValidation.inspect(frames: frames, width: job.plan.width, height: job.plan.height)
                 let encoder = JSONEncoder(); encoder.outputFormatting = [.prettyPrinted, .sortedKeys]
                 try encoder.encode(report).write(to: segmentFolder.appendingPathComponent("frame-report.json"), options: .atomic)
@@ -540,9 +601,13 @@ final class AVENLocalAI: NSObject, ObservableObject, URLSessionDownloadDelegate 
     }
 
     private func finalize(job: AIJobManifest, folder: URL) {
-        message = "Szenen werden zur Vorschau mit Musik zusammengesetzt …"
+        let continuation = job.sourceVideoName.map {
+            AIFrameEncoder.Continuation(source: folder.appendingPathComponent($0), width: job.plan.width,
+                height: job.plan.height, fps: job.plan.fps)
+        }
+        message = continuation == nil ? "Szenen werden zur Vorschau mit Musik zusammengesetzt …" : "Originalvideo und Fortsetzung werden als MP4 exportiert …"
         let clips = (1...job.completed).map { folder.appendingPathComponent(String(format: "scene_%03d/clip.mp4", $0)) }
-        let output = folder.appendingPathComponent("AVEN_KI_VORSCHAU.mp4")
+        let output = folder.appendingPathComponent(continuation == nil ? "AVEN_KI_VORSCHAU.mp4" : "AVEN_FORTSETZUNG.mp4")
         let token = cancellation
         let id = operationID
         backgroundWork = true
@@ -550,10 +615,12 @@ final class AVENLocalAI: NSObject, ObservableObject, URLSessionDownloadDelegate 
             do {
                 try token.check()
                 if FileManager.default.fileExists(atPath: output.path) {
-                    try AIFrameEncoder.validateClip(output, expectedDuration: job.targetSeconds)
+                    let originalSeconds = try continuation.map { try MediaImport.continuationAsset($0.source).range.duration.seconds } ?? 0
+                    try AIFrameEncoder.validateClip(output, expectedDuration: originalSeconds + job.targetSeconds)
                 } else {
                     try AIFrameEncoder.combine(clips: clips, output: output, limit: job.targetSeconds,
-                        soundtrack: job.soundtrackPath.map { folder.appendingPathComponent($0) }, cancellation: token)
+                        soundtrack: job.soundtrackPath.map { folder.appendingPathComponent($0) },
+                        continuation: continuation, cancellation: token)
                 }
                 try token.check()
                 DispatchQueue.main.async {
@@ -562,7 +629,9 @@ final class AVENLocalAI: NSObject, ObservableObject, URLSessionDownloadDelegate 
                     self.isGenerating = false
                     let published = token.commitIfActive {
                         self.resultURL = output
-                        self.message = "Vorschau erstellt. Bitte Originalframes und Video auf erkennbare Motive, Schärfe und Bewegung prüfen. frame-report.json bestätigt nur technische Integrität."
+                        self.message = continuation == nil
+                            ? "Vorschau erstellt. Bitte Originalframes und Video auf erkennbare Motive, Schärfe und Bewegung prüfen. frame-report.json bestätigt nur technische Integrität."
+                            : "MP4 erstellt: Originalvideo und KI-Fortsetzung. Bitte den Übergang und die neuen Szenen prüfen."
                     }
                     if !published { self.message = "Angehalten. Vorschau und Szenen bleiben im Auftragsordner erhalten." }
                 }

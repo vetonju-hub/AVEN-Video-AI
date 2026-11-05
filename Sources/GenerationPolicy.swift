@@ -81,25 +81,45 @@ struct AIJobManifest: Codable {
     let referenceName: String? // legacy decode only
     let referenceNames: [String]?
     let soundtrackPath: String? // v4 stores a path relative to the job directory
+    let avatarName: String?
+    let sourceVideoName: String?
     var completed: Int
     let created: Date
     var totalScenes: Int { VideoTiming.sceneCount(seconds: targetSeconds, clipSeconds: plan.clipSeconds) }
+    var contextFrameCount: Int { sourceVideoName == nil ? 0 : GenerationPolicy.continuationContextFrames }
+    var modelFrameCount: Int { plan.frames + contextFrameCount }
+
     func reference(at scene: Int) -> String? {
+        if let avatarName = avatarName { return avatarName }
+        guard scene >= 0 else { return nil }
         let names = referenceNames ?? referenceName.map { [$0] } ?? []
         return names.isEmpty ? nil : names[scene % names.count]
     }
+
+    func controlSource(at scene: Int) -> String? {
+        guard let sourceVideoName = sourceVideoName, scene >= 0 else { return nil }
+        return scene == 0 ? sourceVideoName : String(format: "scene_%03d/clip.mp4", scene)
+    }
+
     var isSupported: Bool {
-        version == 4 && plan.isSupported && targetSeconds.isFinite && targetSeconds > 0 &&
+        let hasNewInputs = avatarName != nil || sourceVideoName != nil
+        let safeSource = sourceVideoName.map {
+            URL(fileURLWithPath: $0).lastPathComponent == $0 && ($0 == "source-video" || $0.hasPrefix("source-video."))
+        } ?? true
+        return version == (hasNewInputs ? 5 : 4) && (avatarName == nil || avatarName == "avatar.png") && safeSource &&
+        plan.isSupported && targetSeconds.isFinite && targetSeconds > 0 &&
         targetSeconds <= 86_400 && completed >= 0 && completed <= totalScenes &&
         (seed ?? -1) >= 0 && (seed ?? Int64.max) <= 2_147_483_647
     }
 }
 
 enum GenerationPolicy {
+    static let continuationContextFrames = 4
     static let defaultNegative = "blurry, out of focus, low quality, noise, flicker, deformed anatomy, bad motion, oversaturated, text, watermark"
     static let smokePrompt = "A ginger cat sitting on a wooden table in a sunlit room. The cat slowly turns its head. Sharp focus, natural colors, static camera."
     static func arguments(plan: CodablePlan, prompt: String, negativePrompt: String, seed: Int64,
-                          model: String, textEncoder: String, vae: String, reference: String?, output: String) throws -> [String] {
+                          model: String, textEncoder: String, vae: String, reference: String?, output: String,
+                          controlVideo: String? = nil) throws -> [String] {
         guard plan.isSupported else {
             throw GenerationError.invalid("Veraltetes oder ungültiges KI-Profil. Bitte mit dieser App einen neuen Auftrag starten; alte Szenen bleiben erhalten.")
         }
@@ -107,8 +127,9 @@ enum GenerationPolicy {
             throw GenerationError.invalid("Bitte eine Szenenbeschreibung eingeben.")
         }
         guard (0...2_147_483_647).contains(seed) else { throw GenerationError.invalid("Seed muss zwischen 0 und 2147483647 liegen.") }
+        let frameCount = plan.frames + (controlVideo == nil ? 0 : continuationContextFrames)
         var args = ["-M", "vid_gen", "--diffusion-model", model, "--t5xxl", textEncoder, "--vae", vae,
-            "-p", prompt, "-n", negativePrompt, "--video-frames", String(plan.frames), "--fps", String(plan.fps),
+            "-p", prompt, "-n", negativePrompt, "--video-frames", String(frameCount), "--fps", String(plan.fps),
             "--steps", String(plan.steps), "-W", String(plan.width), "-H", String(plan.height),
             "--cfg-scale", String(plan.cfg), "--flow-shift", String(plan.flowShift),
             "--sampling-method", "euler", "--scheduler", "discrete", "--rng", "cpu", "--auto-fit", "off",
@@ -116,6 +137,7 @@ enum GenerationPolicy {
             "--backend", plan.backend, "-t", String(plan.threads), "--seed", String(seed),
             "-v", "-o", output]
         if let image = reference { args += ["-i", image] }
+        if let directory = controlVideo { args += ["--control-video", directory] }
         return args
     }
     static func sceneSeed(base: Int64, index: Int) -> Int64 {
@@ -124,7 +146,7 @@ enum GenerationPolicy {
 }
 
 enum GeneratedFrameSet {
-    static func ordered(files: [URL], expectedCount: Int) throws -> [URL] {
+    static func ordered(files: [URL], expectedCount: Int, droppingFirst: Int = 0) throws -> [URL] {
         let regex = try NSRegularExpression(pattern: #"^generated_([0-9]+)\.png$"#)
         var numbered: [(Int, URL)] = []
         for file in files {
@@ -135,10 +157,10 @@ enum GeneratedFrameSet {
             numbered.append((n, file))
         }
         numbered.sort { $0.0 < $1.0 }
-        guard expectedCount > 0, numbered.count == expectedCount,
+        guard droppingFirst >= 0, droppingFirst < expectedCount, numbered.count == expectedCount,
               numbered.enumerated().allSatisfy({ $0.offset == $0.element.0 }) else {
             throw GenerationError.invalid("Unvollständige KI-Ausgabe: \(numbered.count) statt \(expectedCount) fortlaufender PNG-Frames. engine.log prüfen.")
         }
-        return numbered.map { $0.1 }
+        return numbered.dropFirst(droppingFirst).map { $0.1 }
     }
 }

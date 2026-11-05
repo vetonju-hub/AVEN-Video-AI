@@ -5,7 +5,9 @@ import unittest
 import wave
 import struct
 from PIL import Image, ImageDraw
-from aven.media import inspect_frames, encode_scene, combine, probe, import_reference, audio_duration
+from aven.media import (inspect_frames, encode_scene, combine, probe, import_reference, audio_duration,
+                        prepare_source_video, write_control_video, save_avatar)
+from aven.policy import Plan
 from aven.runtime import Cancellation, Cancelled, run, binary
 
 
@@ -77,6 +79,51 @@ class MediaTests(unittest.TestCase):
         fixtures=Path(__file__).resolve().parents[2]/'tests/Fixtures'
         expected=float((fixtures/'vbr-duration.txt').read_text())
         self.assertAlmostEqual(audio_duration(fixtures/'vbr-no-xing.mp3'),expected,delta=.04)
+
+    def test_single_frame_portrait_clip_can_supply_four_context_frames(self):
+        source=self.root/'portrait.mov'; output=self.root/'source.mp4'; audio=self.root/'source.flac'
+        plan=Plan.make(1,'16:9'); cancel=Cancellation()
+        run([binary('ffmpeg'),'-v','error','-f','lavfi','-i','color=c=red:s=48x80:r=120',
+             '-frames:v','1','-c:v','libx264',source])
+        self.assertFalse(prepare_source_video(source,output,audio,plan,cancel))
+        self.assertFalse(audio.exists())
+        control=self.root/'control'; write_control_video(output,control,plan.fps,cancel)
+        frames=sorted(control.glob('*.png'))
+        self.assertEqual(len(frames),4)
+        for frame in frames:
+            with Image.open(frame) as image:
+                self.assertEqual(image.size,(plan.width,plan.height))
+                self.assertGreater(image.getpixel((plan.width//2,plan.height//2))[0],200)
+                self.assertLess(max(image.getpixel((10,10))),20)
+
+    def test_avatar_replacement_is_local_and_atomic(self):
+        portrait=self.root/'portrait.png'; avatar=self.root/'avatar.png'
+        Image.new('RGB',(30,50),'red').save(portrait)
+        save_avatar(portrait,avatar,Cancellation())
+        original=avatar.read_bytes()
+        Image.new('RGB',(30,50),'blue').save(portrait)
+        cancelled=Cancellation(); cancelled.cancel()
+        with self.assertRaises(Cancelled): save_avatar(portrait,avatar,cancelled)
+        self.assertEqual(avatar.read_bytes(),original)
+        save_avatar(portrait,avatar,Cancellation())
+        with Image.open(avatar) as image: self.assertEqual(image.getpixel((0,0)),(0,0,255))
+
+    def test_continuation_normalizes_source_colors(self):
+        plan=Plan.make(1,'16:9'); cancel=Cancellation()
+        for mode,color_args in [('sdr',['-colorspace','smpte170m']),
+                                ('hdr',['-color_trc','smpte2084','-pix_fmt','yuv420p10le'])]:
+            with self.subTest(mode=mode):
+                source=self.root/f'{mode}.mp4'; output=self.root/f'{mode}-normalized.mp4'
+                run([binary('ffmpeg'),'-v','error','-f','lavfi','-i','color=c=red:s=160x90:r=16:d=0.25',
+                     '-c:v','libx264',*color_args,source])
+                prepare_source_video(source,output,self.root/'source.flac',plan,cancel)
+                video=probe(output)['streams'][0]
+                self.assertEqual((video['color_space'],video['color_transfer'],video['pix_fmt']),('bt709','bt709','yuv420p'))
+                if mode=='sdr':
+                    control=self.root/'control'; write_control_video(output,control,plan.fps,cancel)
+                    with Image.open(control/'frame_003.png') as image:
+                        red,green,blue=image.getpixel((plan.width//2,plan.height//2))
+                        self.assertGreater(red,245); self.assertLess(max(green,blue),8)
 
 
 if __name__=='__main__': unittest.main()

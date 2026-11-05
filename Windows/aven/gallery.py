@@ -2,7 +2,7 @@
 import json
 import math
 from pathlib import Path
-from .policy import Plan, duration, ENGINE_TAG
+from .policy import CONTINUATION_FRAMES, Plan, duration, ENGINE_TAG
 from .story import validate_story
 from .runtime import local_path
 
@@ -19,7 +19,8 @@ def list_projects(root, limit=500):
             if manifest.is_symlink() or manifest.stat().st_size>1024*1024: raise ValueError('Invalid manifest')
             data=json.loads(manifest.read_text(encoding='utf-8'))
             if not isinstance(data,dict): raise ValueError('Invalid manifest root')
-            if data.get('version')!=1 or data.get('engine')!=ENGINE_TAG: raise ValueError('Invalid job version')
+            if data.get('version') not in (1,2) or data.get('engine')!=ENGINE_TAG: raise ValueError('Invalid job version')
+            if data.get('source_video')!=('source.mp4' if data['version']==2 else None): raise ValueError('Invalid continuation')
             refs=data.get('references')
             if not isinstance(refs,list) or len(refs)>1000: raise ValueError('Invalid references')
             for name in refs: local_path(folder,name)
@@ -45,10 +46,14 @@ def scene_frames(folder, number):
     return result
 
 
-def reference_path(folder, data, index):
+def reference_path(folder, data, index, *, scene=None):
     refs=data.get('references',[])
-    if type(index) is not int or not 0<=index<len(refs): return None
-    path=local_path(Path(folder),refs[index])
+    if type(index) is int and 0<=index<len(refs):
+        name=refs[index]
+    elif index is None and data.get('version')==2 and type(scene) is int and 1<=scene<=100000:
+        name=f'scene_{scene:06}/control/frame_{CONTINUATION_FRAMES-1:03}.png'
+    else: return None
+    path=local_path(Path(folder),name)
     return path if path.is_file() else None
 
 

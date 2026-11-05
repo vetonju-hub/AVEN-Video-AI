@@ -114,7 +114,7 @@ class FramePane:
             number=self.scene.get(); index=self.index.get()
             if self.reference.get():
                 spec=scene_spec(self.job['data'],number-1)
-                path=reference_path(self.job['folder'],self.job['data'],spec['reference'])
+                path=reference_path(self.job['folder'],self.job['data'],spec['reference'],scene=number)
             else:
                 files=scene_frames(self.job['folder'],number)
                 path=next((p for p in files if p.name==f'generated_{index:03}.png'),None)

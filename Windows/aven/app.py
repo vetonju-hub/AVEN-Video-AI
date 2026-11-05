@@ -6,15 +6,19 @@ import sys
 import threading
 import tkinter as tk
 from tkinter import filedialog, messagebox, ttk
+from PIL import Image, ImageTk
 from . import VERSION
 from .i18n import Locale, Bindings, message, ENGLISH
 from .policy import Plan, NEGATIVE, SMOKE_PROMPT, target_duration
 from .runtime import Cancellation, Cancelled, user_root, nvidia_info
 from .models import ensure_models
-from .media import audio_duration
+from .media import audio_duration, save_avatar
 from .jobs import create_job, generate, load_job
 from .studio_panels import StoryEditor, ProjectBrowser, show_report
 from .telemetry import status_text
+
+
+DEFAULT_PROMPT = 'A quiet city street at night, purple neon reflected on wet pavement. A slow forward camera movement, sharp focus, natural lighting.'
 
 
 class Studio:
@@ -25,6 +29,7 @@ class Studio:
         self.token=Cancellation(); self.job=None; self.output=None; self.references=[]
         self.audio=None; self.audio_seconds=None; self.controls=[]; self.views=[]; self.hardware_info=None; self.testing=False
         self.data=user_root(); self.models=self.data/'Models'; self.jobs=self.data/'Jobs'
+        self.source_video=None; self.avatar_path=self.data/'avatar.png'
         self.data.mkdir(parents=True,exist_ok=True)
         self.language=Locale(self.data/'settings.json'); self.bindings=Bindings(self.language); self.text_variables={}
         style=ttk.Style(root); style.theme_use('clam')
@@ -59,26 +64,53 @@ class Studio:
         def label(text): self.localized(ttk.Label,body,text=text,font=('Segoe UI',12,'bold')).pack(anchor='w',pady=(14,6))
         label('Szenenbeschreibung')
         self.prompt=tk.Text(body,height=4,wrap='word',bg='#252637',fg='white',insertbackground='white',font=('Segoe UI',11),relief='flat',padx=10,pady=10)
-        self.prompt.insert('1.0','A quiet city street at night, purple neon reflected on wet pavement. A slow forward camera movement, sharp focus, natural lighting.')
+        self.prompt.insert('1.0',DEFAULT_PROMPT)
         self.prompt.pack(fill='x'); self.controls.append(self.prompt)
         self.localized(ttk.Label,body,text='Motiv, Bewegung, Licht und Kamera beschreiben. Englische Prompts funktionieren mit Wan meist besser.',style='Info.TLabel',wraplength=1000).pack(anchor='w',pady=5)
+        label('Video fortsetzen')
+        row=ttk.Frame(body); row.pack(fill='x')
+        self.button(row,'Clip auswählen',self.choose_source_video).pack(side='left',padx=(0,8))
+        self.button(row,'Clip entfernen',lambda:self.set_source_video(None)).pack(side='left')
+        self.source_label=self.variable('Kein Clip zur Fortsetzung ausgewählt')
+        self.localized(ttk.Label,body,textvariable=self.source_label,style='Info.TLabel',wraplength=720).pack(anchor='w',pady=(6,0))
+        self.localized(ttk.Label,body,text='Beschreibe oben, was nach dem Clip passieren soll. Die letzten Bilder dienen als Ausgangspunkt. Musik und Länge gelten für den neuen Teil.',
+                       style='Info.TLabel',wraplength=720).pack(anchor='w',pady=(4,0))
         label('Negativer Prompt')
         self.negative=tk.Text(body,height=2,wrap='word',bg='#252637',fg='white',insertbackground='white',relief='flat',padx=10,pady=8)
         self.negative.insert('1.0',NEGATIVE); self.negative.pack(fill='x'); self.controls.append(self.negative)
         row=ttk.Frame(body); row.pack(fill='x',pady=14)
         self.seed=tk.StringVar(value='42'); self.seconds=tk.StringVar(value='30'); self.format=tk.StringVar(value='16:9'); self.level=tk.IntVar(value=1)
-        for title,var,width in [('Seed',self.seed,14),('Eigene Länge (Sekunden)',self.seconds,14)]:
-            self.localized(ttk.Label,row,text=title).pack(side='left',padx=(0,8)); w=ttk.Entry(row,textvariable=var,width=width); w.pack(side='left',padx=(0,18)); self.controls.append(w)
+        self.duration_label=self.variable('Eigene Länge (Sekunden)')
+        for title,var in [(self.variable('Seed'),self.seed),(self.duration_label,self.seconds)]:
+            ttk.Label(row,textvariable=title).pack(side='left',padx=(0,8))
+            entry=ttk.Entry(row,textvariable=var,width=14); entry.pack(side='left',padx=(0,18)); self.controls.append(entry)
         self.localized(ttk.Label,row,text='Format').pack(side='left',padx=(0,8))
         combo=ttk.Combobox(row,textvariable=self.format,values=['16:9','9:16','1:1'],state='readonly',width=7)
         combo.pack(side='left'); self.controls.append(combo); combo.bind('<<ComboboxSelected>>',lambda e:self.describe())
         self.match=tk.BooleanVar(value=True)
-        self.check(body,'Videolänge automatisch an die gesamte Musik anpassen',self.match)
+        self.match_label=self.variable('Videolänge automatisch an die gesamte Musik anpassen')
+        match_button=ttk.Checkbutton(body,textvariable=self.match_label,variable=self.match)
+        match_button.pack(anchor='w'); self.controls.append(match_button)
         self.audio_label=self.variable('Keine Musik ausgewählt')
         self.localized(ttk.Label,body,textvariable=self.audio_label,style='Info.TLabel',wraplength=1000).pack(anchor='w',pady=6)
         buttons=ttk.Frame(body); buttons.pack(fill='x')
         self.button(buttons,'Musik hinzufügen',self.choose_audio).pack(side='left',padx=(0,8))
         self.button(buttons,'Musik entfernen',self.remove_audio).pack(side='left')
+        label('Fester Avatar')
+        row=ttk.Frame(body); row.pack(fill='x')
+        self.avatar_preview=ttk.Label(row); self.avatar_photo=None
+        self.avatar_preview.pack(side='left',padx=(0,8))
+        avatar_controls=ttk.Frame(row); avatar_controls.pack(side='left',fill='x',expand=True)
+        avatar_buttons=ttk.Frame(avatar_controls); avatar_buttons.pack(anchor='w')
+        self.button(avatar_buttons,'Avatarbild auswählen',self.choose_avatar).pack(side='left',padx=(0,8))
+        self.button(avatar_buttons,'Avatar entfernen',self.remove_avatar).pack(side='left')
+        self.avatar_label=self.variable('Kein Avatar gespeichert')
+        self.localized(ttk.Label,avatar_controls,textvariable=self.avatar_label,style='Info.TLabel').pack(anchor='w',pady=(4,0))
+        self.use_avatar=tk.BooleanVar(value=True)
+        self.check(avatar_controls,'Gespeicherten Avatar für alle Szenen verwenden',self.use_avatar)
+        self.localized(ttk.Label,body,text='Der Avatar bleibt lokal gespeichert. Ist er aktiv, hat er bei jeder KI-Szene Vorrang vor anderen Motivbildern. Sein Aussehen kann zwischen Szenen variieren.',
+                       style='Info.TLabel',wraplength=720).pack(anchor='w',pady=(4,0))
+        self.refresh_avatar()
         label('Foto- und Videoreferenzen')
         row=ttk.Frame(body); row.pack(fill='x')
         self.button(row,'Fotos hinzufügen',lambda:self.choose_refs(False)).pack(side='left',padx=(0,8))
@@ -204,6 +236,7 @@ class Studio:
             elif kind=='hardware': self.hardware_info=value; self.describe()
             elif kind=='job': self.job=value; self.output=None
             elif kind=='audio' and not token.event.is_set(): self.audio,self.audio_seconds=value; self.set_text(self.audio_label,message('Musik: {name} · {seconds:.3f} Sekunden',name=self.audio.name,seconds=self.audio_seconds))
+            elif kind=='avatar': self.use_avatar.set(True); self.refresh_avatar()
             elif kind in ('done','error'):
                 self.busy=False; self.progress.stop(); self.cancel_button.state(['disabled'])
                 for widget in self.controls:
@@ -237,6 +270,58 @@ class Studio:
         self.work(operation)
 
     def remove_audio(self): self.audio=None; self.audio_seconds=None; self.set_text(self.audio_label,'Keine Musik ausgewählt')
+
+    def choose_source_video(self):
+        source=filedialog.askopenfilename(title=self.language.render('Clip auswählen'),filetypes=[
+            (self.language.render('Videos'),'*.mp4 *.mov *.mkv *.avi *.webm *.m4v'),
+            (self.language.render('Alle Dateien'),'*.*')])
+        if source: self.set_source_video(Path(source))
+
+    def set_source_video(self, source):
+        if source:
+            if self.source_video is None and self.seconds.get()=='30': self.seconds.set('2')
+            if self.prompt.get('1.0','end').strip()==DEFAULT_PROMPT: self.prompt.delete('1.0','end')
+            self.set_text(self.source_label,message('Clip zur Fortsetzung: {name}',name=source.name))
+        else:
+            self.set_text(self.source_label,'Kein Clip zur Fortsetzung ausgewählt')
+        self.source_video=source
+        self.set_text(self.duration_label,'Zusätzliche Länge (Sekunden)' if source else 'Eigene Länge (Sekunden)')
+        self.set_text(self.match_label,'Fortsetzung automatisch an die gesamte Musik anpassen' if source else
+                      'Videolänge automatisch an die gesamte Musik anpassen')
+
+    def choose_avatar(self):
+        source=filedialog.askopenfilename(title=self.language.render('Avatarbild auswählen'),filetypes=[
+            (self.language.render('Fotos'),'*.png *.jpg *.jpeg *.webp *.bmp *.tif *.tiff'),
+            (self.language.render('Alle Dateien'),'*.*')])
+        if not source: return
+        def operation(cancel,log):
+            try: save_avatar(source,self.avatar_path,cancel)
+            except (OSError,ValueError) as e:
+                raise ValueError(message('Avatarbild konnte nicht gespeichert werden: {detail}',detail=str(e))) from e
+            self.events.put(('avatar',cancel,None))
+            return 'Avatar gespeichert.'
+        self.work(operation)
+
+    def remove_avatar(self):
+        try: self.avatar_path.unlink(missing_ok=True)
+        except OSError as e:
+            messagebox.showerror('AVEN',self.language.render(message('Avatar konnte nicht entfernt werden: {detail}',detail=str(e))),parent=self.root)
+            return
+        self.refresh_avatar()
+
+    def refresh_avatar(self):
+        self.avatar_photo=None
+        caption='Kein Avatar gespeichert'
+        if self.avatar_path.is_file():
+            try:
+                with Image.open(self.avatar_path) as image:
+                    image.thumbnail((60,60),Image.Resampling.LANCZOS)
+                    self.avatar_photo=ImageTk.PhotoImage(image,master=self.avatar_preview)
+                caption='Avatar gespeichert.'
+            except OSError:
+                caption='Gespeichertes Avatarbild ist nicht lesbar. Bitte erneut auswählen.'
+        self.avatar_preview.configure(image=self.avatar_photo or '')
+        self.set_text(self.avatar_label,caption)
 
     def choose_refs(self, video):
         try: seconds=float(self.ref_time.get()) if video else 0
@@ -280,14 +365,17 @@ class Studio:
             seconds=2 if smoke else target_duration(self.seconds.get(),self.audio_seconds,self.match.get() and self.audio is not None)
             story=None if smoke else self.story.value(seconds)
             refs=[] if smoke else list(self.references); sound=None if smoke else self.audio
+            source=None if smoke else self.source_video
+            avatar=self.avatar_path if not smoke and self.use_avatar.get() and self.avatar_path.is_file() else None
             # Validate input before opening a worker / allocating a saved job.
             from .policy import engine_arguments
             engine_arguments(Plan.make(level,fmt),prompt,negative,seed,['m','t','v'],Path('.'))
             def operation(c,log):
                 info=nvidia_info(); c.check(); self.events.put(('hardware',c,info))
                 plan=Plan.make(level,fmt,memory_mode=mode,vram_mb=info['vram_mb'])
-                log('Referenzen und Musik werden im Auftrag gesichert …')
-                job=create_job(self.jobs,plan,prompt,negative,seed,seconds,refs,sound,c,story=story)
+                log('Clip und Referenzen werden vorbereitet …' if source else 'Referenzen und Musik werden im Auftrag gesichert …')
+                job=create_job(self.jobs,plan,prompt,negative,seed,seconds,refs,sound,c,story=story,
+                               source_video=source,avatar=avatar)
                 self.events.put(('job',c,job))
                 return generate(job,self.models,c,log,telemetry=lambda event:self.events.put(('metrics',c,event)))
             self.testing=smoke; self.work(operation)

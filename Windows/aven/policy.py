@@ -9,6 +9,7 @@ NEGATIVE = 'blurry, out of focus, low quality, noise, flicker, deformed anatomy,
 SMOKE_PROMPT = 'A ginger cat sitting on a wooden table in a sunlit room. The cat slowly turns its head. Sharp focus, natural colors, static camera.'
 ENGINE_TAG = 'master-1043-3be2378'
 BACKEND = 'diffusion=cuda0,te=cpu,vae=cpu'
+CONTINUATION_FRAMES = 4
 
 
 def duration(manual, music, match_music):
@@ -63,12 +64,13 @@ class Plan:
         raise ValueError('Veraltetes oder ungültiges Qualitätsprofil. Neuen Auftrag starten.')
 
 
-def engine_arguments(plan, prompt, negative, seed, models, scene, reference=None):
+def engine_arguments(plan, prompt, negative, seed, models, scene, reference=None, *, control_video=None):
     plan.validate()
     if not prompt.strip(): raise ValueError('Bitte eine Szenenbeschreibung eingeben.')
     if type(seed) is not int or not 0 <= seed <= 2147483647: raise ValueError('Seed muss zwischen 0 und 2147483647 liegen.')
+    frames = plan.frames + (CONTINUATION_FRAMES if control_video else 0)
     args = ['-M','vid_gen','--diffusion-model',str(models[0]),'--t5xxl',str(models[1]),'--vae',str(models[2]),
-            '-p',prompt,'-n',negative,'--video-frames',str(plan.frames),'--fps',str(plan.fps),
+            '-p',prompt,'-n',negative,'--video-frames',str(frames),'--fps',str(plan.fps),
             '--steps',str(plan.steps),'-W',str(plan.width),'-H',str(plan.height),
             '--cfg-scale',str(plan.cfg),'--flow-shift',str(plan.shift),'--sampling-method','euler',
             '--scheduler','discrete','--rng','cpu','--backend',BACKEND,'--params-backend',('diffusion=cpu,te=cpu,vae=cpu' if plan.memory_mode=='balanced' else BACKEND),
@@ -77,6 +79,7 @@ def engine_arguments(plan, prompt, negative, seed, models, scene, reference=None
             '--temporal-tiling','-t',str(plan.threads),'--seed',str(seed),'-v',
             '-o',str(Path(scene)/'generated_%03d.png')]
     if reference: args += ['-i',str(reference)]
+    if control_video: args += ['--control-video',str(control_video)]
     return args
 
 

@@ -33,6 +33,13 @@ struct SceneImage: Identifiable {
 
 
 final class StudioModel: ObservableObject {
+    struct ContinuationSource {
+        let url: URL
+        let duration: Double
+        let thumbnail: NSImage?
+    }
+
+    private static let avatarPreference = "AVEN.v5.useSavedAvatar"
     @Published var prompt = "A quiet city street at night, purple neon reflected on wet pavement. A slow forward camera movement, sharp focus, natural lighting."
     @Published var negativePrompt = GenerationPolicy.defaultNegative
     @Published var seed: Int64 = 42
@@ -50,7 +57,22 @@ final class StudioModel: ObservableObject {
     @Published var isRendering = false
     @Published var lastOutput: URL?
     @Published var visionResult = ""
+    @Published private(set) var continuationSource: ContinuationSource?
+    @Published private(set) var savedAvatar: CGImage?
+    @Published var useSavedAvatar = UserDefaults.standard.object(forKey: StudioModel.avatarPreference) as? Bool ?? true {
+        didSet { UserDefaults.standard.set(useSavedAvatar, forKey: Self.avatarPreference) }
+    }
     private var cancellation: RenderCancellation?
+    private let avatarURL = FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask)[0]
+        .appendingPathComponent("AVEN Video AI/Avatar/avatar.png")
+
+    init() {
+        guard FileManager.default.fileExists(atPath: avatarURL.path) else { return }
+        do { savedAvatar = try MediaImport.decodeImage(avatarURL, maxPixelSize: 1920) }
+        catch { status = "Gespeicherter Avatar kann nicht gelesen werden. Bitte ein Bild neu auswählen." }
+    }
+
+    var avatarForGeneration: CGImage? { useSavedAvatar ? savedAvatar : nil }
 
     var targetSeconds: Double {
         (try? VideoTiming.resolve(manual: duration, music: musicDuration, matchMusic: matchMusicLength && soundtrack != nil)) ?? duration
@@ -72,6 +94,71 @@ final class StudioModel: ObservableObject {
         panel.allowsMultipleSelection = true
         panel.canChooseDirectories = false
         if panel.runModal() == .OK { importReferences(panel.urls, video: true) }
+    }
+
+    func chooseContinuationSource() {
+        guard !isImporting else { return }
+        let panel = NSOpenPanel()
+        panel.title = "Video zum Fortsetzen auswählen"
+        panel.allowedContentTypes = [.movie, .mpeg4Movie, .quickTimeMovie]
+        panel.canChooseDirectories = false
+        guard panel.runModal() == .OK, let url = panel.url else { return }
+        isImporting = true
+        status = "Originalvideo wird lokal gelesen …"
+        DispatchQueue.global(qos: .userInitiated).async {
+            do {
+                let source = try MediaImport.continuationAsset(url)
+                let thumbnail = (try? MediaImport.referenceFromVideo(url, seconds: source.range.start.seconds))
+                    .map { NSImage(cgImage: $0, size: .zero) }
+                let selected = ContinuationSource(url: url, duration: source.range.duration.seconds, thumbnail: thumbnail)
+                DispatchQueue.main.async {
+                    self.continuationSource = selected
+                    self.isImporting = false
+                    self.status = "Originalvideo für die Fortsetzung ausgewählt."
+                }
+            } catch {
+                DispatchQueue.main.async { self.isImporting = false; self.status = error.localizedDescription }
+            }
+        }
+    }
+
+    func removeContinuationSource() {
+        continuationSource = nil
+        status = "Originalvideo aus dem aktuellen Projekt entfernt."
+    }
+
+    func chooseAvatar() {
+        guard !isImporting else { return }
+        let panel = NSOpenPanel()
+        panel.title = "Ein Bild als wiederverwendbaren Avatar auswählen"
+        panel.allowedContentTypes = [.image]
+        panel.canChooseDirectories = false
+        guard panel.runModal() == .OK, let url = panel.url else { return }
+        isImporting = true
+        status = "Avatar wird lokal gespeichert …"
+        let destination = avatarURL
+        DispatchQueue.global(qos: .userInitiated).async {
+            do {
+                let image = try MediaImport.saveAvatar(from: url, to: destination)
+                DispatchQueue.main.async {
+                    self.savedAvatar = image
+                    self.useSavedAvatar = true
+                    self.isImporting = false
+                    self.status = "Avatar gespeichert und für KI-Videos aktiviert."
+                }
+            } catch {
+                DispatchQueue.main.async { self.isImporting = false; self.status = error.localizedDescription }
+            }
+        }
+    }
+
+    func removeAvatar() {
+        do {
+            if FileManager.default.fileExists(atPath: avatarURL.path) { try FileManager.default.removeItem(at: avatarURL) }
+            savedAvatar = nil
+            useSavedAvatar = false
+            status = "Gespeicherter Avatar entfernt."
+        } catch { status = error.localizedDescription }
     }
 
     private func importReferences(_ urls: [URL], video: Bool) {
@@ -271,7 +358,7 @@ struct StudioView: View {
                 .fill(LinearGradient(colors: [Color(red: 0.21, green: 0.14, blue: 0.4),
                                               Color(red: 0.05, green: 0.08, blue: 0.18)],
                                      startPoint: .topLeading, endPoint: .bottomTrailing))
-            if let image = studio.scenes.first?.thumbnail {
+            if let image = studio.continuationSource?.thumbnail ?? studio.scenes.first?.thumbnail {
                 Image(nsImage: image).resizable().scaledToFit()
                     .padding(12).frame(maxWidth: .infinity, maxHeight: .infinity)
             } else {
@@ -294,7 +381,9 @@ struct StudioView: View {
             Text("PROJEKT-EINSTELLUNGEN").font(.system(size: 11, weight: .bold)).tracking(2).foregroundStyle(.secondary)
             TextField("Projekttitel", text: $studio.projectTitle)
                 .textFieldStyle(.roundedBorder)
-            Text("Szenenbeschreibung").font(.caption).foregroundStyle(.secondary)
+            continuationControls
+            Text(studio.continuationSource == nil ? "Szenenbeschreibung" : "Was passiert als Nächstes?")
+                .font(.caption).foregroundStyle(.secondary)
             TextEditor(text: $studio.prompt)
                 .font(.body)
                 .scrollContentBackground(.hidden)
@@ -323,7 +412,8 @@ struct StudioView: View {
                 }
                 VStack(alignment: .leading, spacing: 6) {
                     HStack {
-                        Text("Eigene Länge").font(.caption).foregroundStyle(.secondary)
+                        Text(studio.continuationSource == nil ? "Eigene Länge" : "Länge der Fortsetzung")
+                            .font(.caption).foregroundStyle(.secondary)
                         Spacer()
                         Text("\(String(format: "%.1f", studio.targetSeconds)) s")
                             .monospacedDigit().font(.caption).foregroundStyle(accent)
@@ -346,9 +436,11 @@ struct StudioView: View {
                 TextField("Sekunden", value: $studio.referenceTime, format: .number).frame(width: 90)
                     .textFieldStyle(.roundedBorder)
             }
-            Text("Videoimport übernimmt ein Einzelbild als Motiv-Referenz. Bewegungen des Originalvideos werden nicht übertragen. Fotos und Videoreferenzen werden in der Szenenreihenfolge verwendet.")
+            Text("„Video als Referenz“ wählt ein Einzelbild. Fotos und diese Einzelbilder wechseln je nach Szene. Für eine Fortsetzung wähle oben „Video fortsetzen“.")
                 .font(.caption).foregroundStyle(.secondary)
-            Toggle("Videolänge automatisch an die gesamte Musik anpassen", isOn: $studio.matchMusicLength)
+            avatarControls
+            Toggle(studio.continuationSource == nil ? "Videolänge automatisch an die gesamte Musik anpassen" :
+                "Fortsetzung automatisch an die gesamte Musik anpassen", isOn: $studio.matchMusicLength)
             if let soundtrack = studio.soundtrack {
                 HStack {
                     Text("Musik: \(soundtrack.lastPathComponent) · \(String(format: "%.3f", studio.musicDuration ?? 0)) s")
@@ -362,6 +454,50 @@ struct StudioView: View {
         }
         .padding(20)
         .background(.white.opacity(0.045), in: RoundedRectangle(cornerRadius: 17))
+    }
+
+    private var continuationControls: some View {
+        VStack(alignment: .leading, spacing: 7) {
+            HStack(spacing: 10) {
+                Button { studio.chooseContinuationSource() } label: {
+                    Label(studio.continuationSource == nil ? "Video fortsetzen …" : "Originalvideo wechseln …", systemImage: "film.badge.plus")
+                }
+                if let source = studio.continuationSource {
+                    Text("\(source.url.lastPathComponent) · \(String(format: "%.2f", source.duration)) s")
+                        .lineLimit(1).font(.caption).foregroundStyle(.secondary)
+                    Button("Entfernen") { studio.removeContinuationSource() }
+                }
+            }
+            .buttonStyle(.bordered)
+            Text("AVEN erstellt eine neue MP4-Datei mit dem Ton der Originalaufnahme. Zusätzliche Musik beginnt bei der Fortsetzung.")
+                .font(.caption).foregroundStyle(.secondary)
+        }
+        .disabled(studio.isImporting)
+    }
+
+    private var avatarControls: some View {
+        VStack(alignment: .leading, spacing: 7) {
+            HStack(spacing: 10) {
+                if let avatar = studio.savedAvatar {
+                    Image(nsImage: NSImage(cgImage: avatar, size: .zero))
+                        .resizable().scaledToFit().frame(width: 44, height: 44)
+                        .accessibilityLabel("Gespeicherter Avatar")
+                }
+                Button { studio.chooseAvatar() } label: {
+                    Label(studio.savedAvatar == nil ? "Avatar auswählen …" : "Avatar ersetzen …", systemImage: "person.crop.square")
+                }
+                if studio.savedAvatar != nil {
+                    Button("Avatar entfernen") { studio.removeAvatar() }
+                }
+            }
+            .buttonStyle(.bordered)
+            if studio.savedAvatar != nil {
+                Toggle("Gespeicherten Avatar in jeder KI-Szene verwenden", isOn: $studio.useSavedAvatar)
+            }
+            Text("Der Avatar bleibt auf diesem Mac gespeichert. Er dient als feste Bildreferenz; die KI kann sein Aussehen verändern.")
+                .font(.caption).foregroundStyle(.secondary)
+        }
+        .disabled(studio.isImporting)
     }
 
     private var aiControls: some View {
@@ -398,10 +534,16 @@ struct StudioView: View {
                 .toggleStyle(.switch)
             Toggle("Importierte Motive als Referenzen verwenden", isOn: $useReference)
                 .toggleStyle(.switch)
+                .disabled(studio.avatarForGeneration != nil)
             let seconds = studio.targetSeconds
             let segmentCount = VideoTiming.sceneCount(seconds: seconds, clipSeconds: plan.clipSeconds)
-            Text("Ziel: \(String(format: "%.3f", seconds)) Sekunden · \(segmentCount) KI-Sequenzen")
+            let durationLabel = studio.continuationSource == nil ? "Ziel" : "Zusätzlich zum Original"
+            Text("\(durationLabel): \(String(format: "%.3f", seconds)) Sekunden · \(segmentCount) KI-Sequenzen")
                 .font(.caption).foregroundStyle(.secondary)
+            if studio.continuationSource != nil {
+                Text("Die KI orientiert sich an den letzten Bildern. Der Übergang und die Bewegungen können sichtbar abweichen.")
+                    .font(.caption).foregroundStyle(.secondary)
+            }
             Text("Jede Sequenz verwendet eine eigene Berechnung und einen eigenen Seed. Zwischen Szenen sind Schnitte möglich; ein langer Song kann auf Intel viele Tage benötigen. Erst den kurzen Qualitätstest prüfen.")
                 .font(.caption).foregroundStyle(.secondary)
             LazyVGrid(columns: [GridItem(.adaptive(minimum: 200), alignment: .leading)], alignment: .leading, spacing: 10) {
@@ -423,10 +565,11 @@ struct StudioView: View {
                                 matchMusic: studio.matchMusicLength && studio.soundtrack != nil)
                             localAI.generateAdaptive(references: useReference ? studio.scenes.map(\.cgImage) : [],
                                 prompt: studio.prompt, negativePrompt: studio.negativePrompt, seed: studio.seed,
-                                format: studio.format, soundtrack: studio.soundtrack, plan: plan, targetSeconds: seconds)
+                                format: studio.format, soundtrack: studio.soundtrack, plan: plan, targetSeconds: seconds,
+                                avatar: studio.avatarForGeneration, sourceVideo: studio.continuationSource?.url)
                         } catch { studio.status = error.localizedDescription }
                     } label: {
-                        Label("ECHTES KI-VIDEO GENERIEREN", systemImage: "sparkles.tv")
+                        Label(studio.continuationSource == nil ? "ECHTES KI-VIDEO GENERIEREN" : "VIDEO MIT KI FORTSETZEN", systemImage: "sparkles.tv")
                     }.buttonStyle(.borderedProminent).tint(accent)
                     Button("2-Sekunden-Qualitätstest") {
                         let smokePlan = AVENQualityPlan.make(for: machine, level: 1, portrait: false, fullPower: fullPower)
@@ -435,7 +578,7 @@ struct StudioView: View {
                             soundtrack: nil, plan: smokePlan, targetSeconds: 2)
                     }
                     if localAI.resultURL != nil {
-                        Button("KI-Vorschau anzeigen") { localAI.showResult() }
+                        Button("KI-MP4 im Finder anzeigen") { localAI.showResult() }
                     }
                     if localAI.canResume {
                         Button("Letzten Auftrag fortsetzen") { localAI.resumeLastJob() }
@@ -503,6 +646,7 @@ struct StudioView: View {
                             .font(.system(size: 15, weight: .bold)).frame(minWidth: 195)
                     }
                     .buttonStyle(.borderedProminent).tint(accent).controlSize(.large)
+                    .disabled(studio.continuationSource != nil)
                     if studio.lastOutput != nil {
                         Button("Im Finder anzeigen") { studio.revealOutput() }
                             .buttonStyle(.bordered)

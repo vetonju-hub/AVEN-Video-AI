@@ -1,11 +1,11 @@
-# Windows-Prüfstand vom 4. November 2026
+# Windows-Prüfstand vom 5. November 2026
 
-Ziel: Windows 11 x64, NVIDIA RTX 3080 10 GB, 128 GB RAM. Vorhandene Mac-Version bleibt unverändert.
+Zielsystem ist Windows 11 x64 mit RTX 3080 (10 GB) und 128 GB RAM.
 
 ## Ausgeführt
 
-- 45 Python-unittest-Tests auf Linux mit echten PNG-, JPEG-, H.264-MP4-, WAV- und VBR-MP3-Dateien und dem installierten FFmpeg.
-- Sprachumschaltung Deutsch/Englisch: gespeicherte Auswahl, beschädigte Einstellungen, aktuelle Sprache für dynamische Status-/Fehlermeldungen, passende Formatplatzhalter und aktive Textbindungen ohne Neuerstellen der Steuerelemente geprüft. Der native Windows-GUI-Smoketest prüft zusätzlich echte Sprachbutton-Klicks und den Erhalt von Prompt, Seed, Länge und deaktivierten Steuerelementen; dieser GUI-Test ist lokal mangels Displayserver weiterhin nicht ausgeführt.
+- 60 Python-Tests auf Linux mit Pillow 11.3.0 und echten PNG-, JPEG-, H.264-MP4-, WAV- und VBR-MP3-Dateien bestanden.
+- Die gepackte Linux-Testversion mit PyInstaller 6.16.0 bestand den Exporttest sowie den GUI-Test unter Xvfb. Der GUI-Test prüfte Sprachwechsel, den Erhalt von Prompt, Seed und Länge, die Szenenbearbeitung und die Vorschau gespeicherter Projektbilder.
 - Literal geprüfte CUDA0-/CPU-Zuweisung, alle Qualitätsstufen und Formate, ungültige Längen/Seeds, Unicode und Zeichen in Pfaden/Prompts, Manifestpfade, Prüfsummen und Abbruch.
 - 33 Bilder werden geschrieben und tatsächlich dekodiert; Farben/Orientierung, genaue Clipdauer, exaktes 1,337-Sekunden-Ende, vollständiger Song, Tonhöhe und Ton am Ende sowie fehlende Musikschleifen geprüft.
 - VBR-MP3 ohne Xing-Dauerheader: tatsächliche Samplezahl statt ungenauer Bitratenschätzung; rund 5,407 statt fälschlich 9,034 Sekunden.
@@ -13,8 +13,7 @@ Ziel: Windows 11 x64, NVIDIA RTX 3080 10 GB, 128 GB RAM. Vorhandene Mac-Version 
 - Regression eines ausgetauschten 64×64-Videocaches bei angeforderten 832×480: erkannt und aus den geprüften Originalbildern rekonstruiert, ohne neuen Modelllauf. Clipauflösung, Bildrate, Codec, Bildanzahl, Dauer und gespeicherte SHA256 werden geprüft.
 - Download-Prüfsummen, keine Veröffentlichung beschädigter Archive, Archivpfade mit Traversal/Windows-Laufwerken und Kollisionen geprüft.
 - Python-Syntax aller Windows-Dateien; bestehende Paket-/Shell-/Workflowprüfungen: vier bestanden, Swift-Compilerprüfung mangels Compiler übersprungen.
-- PyInstaller 6.16.0 erzeugte hier ein Linux-Testbundle desselben Programmkerns. Sein Medientest, das Laden der gebündelten Modellquellen und der Sprach-/Einstellungstest liefen erfolgreich. Dies ist keine Windows-EXE und wird nicht als solche ausgeliefert.
-- Frische unabhängige Codeprüfung mit reproduzierten Tests. Beide relevanten Befunde sind durch zuvor fehlgeschlagene Regressionstests korrigiert. Der zuerst angefragte Reviewer war wegen eines Nutzungslimits nicht verfügbar; ein anderer Reviewer hat die Prüfung durchgeführt.
+- Die Fortsetzungstests prüfen die vier Referenzbilder, Originalbild und Originalton am Anfang, Musik im neuen Teil, Dauer und Abbruch mit anschließendem Fortsetzen. Der Auftrag behält seinen Avatar auch nach Austausch des Profilbildes. Zusätzliche Tests decken kurze Hochkantclips sowie SDR- und HDR-Import ab.
 
 ## Neue Studio-Funktionen geprüft
 
@@ -26,13 +25,13 @@ Ziel: Windows 11 x64, NVIDIA RTX 3080 10 GB, 128 GB RAM. Vorhandene Mac-Version 
 - Projektübersicht isoliert beschädigte Metadaten; Originalbilder und Referenzen bleiben im gewählten Auftragspfad. Symlinks außerhalb werden nicht als Originalbilder angezeigt.
 - Manuelle Qualitätsbewertung ändert die Messwerte nicht; synthetische Testfixtures werden im Bericht ausdrücklich gekennzeichnet.
 - Unabhängige Nachprüfung: ungültige JSON-Wurzeltypen in Projekten und beschädigte Berichtfelder werden isoliert behandelt; Regressionen einschließlich sehr großer Zahlen geprüft. Abschluss-/Abbruchphasen erscheinen auch innerhalb des Drosselungsfensters. Offene Szenenplan-Vorschauen wechseln ihre erzeugten Beschriftungen sofort zwischen DE/EN, ohne Prompt-Inhalt zu ändern.
-- Native Windows-GUI-Prüfung wurde um Szeneneditor, echte ImageTk-Vorschauen, A/B-Vergleich, Referenzanzeige, Originalgröße und Bewertungsspeicherung erweitert. Ihr tatsächlicher Lauf steht noch aus.
+- Die GUI-Prüfung umfasst Szeneneditor, ImageTk-Vorschauen, A/B-Vergleich, Referenzanzeige, Originalgröße und Bewertungsspeicherung. Der native Windows-Lauf steht aus.
 
 ## Noch nicht ausgeführt
 
-Der Windows-Build ist implementiert, aber noch nicht auf GitHub hochgeladen/ausgeführt. Daher gibt es für dieses Update noch keine bestätigte Windows-EXE. Die vorhandene GitHub-Verbindung hat keine nutzbaren Schreibrechte; als Übergabe wird das geprüfte Quellcode-Update über GitHub Desktop hochgeladen.
+Der letzte native Windows-Lauf bestand 48 Tests und erzeugte die EXE. Beim Start von `sd-cli.exe` meldete der Windows-Loader `0xC0000135`. Die korrigierte Paketierung bindet die zu `ggml-base.dll` gehörende OpenMP-Bibliothek ein und lädt die treiberunabhängigen Bibliotheken im Pakettest. Die CUDA-Engine benötigt außerdem `nvcuda.dll` aus dem installierten NVIDIA-Treiber. Wenn der Treiber auf dem Runner fehlt, meldet der Pakettest den CLI-Test ausdrücklich als `not_run_no_nvidia_driver`. [Nativer Windows-Lauf](https://github.com/vetonju-hub/AVEN-Video-AI/actions/runs/41944809640)
 
-Die lokale Umgebung hat keinen Displayserver und keine NVIDIA-GPU. Windows-GUI, tatsächliches Laden aller CUDA-/CRT-DLLs, Windows-Prozessabbruch und der native Paketstart müssen im Windows-Workflow geprüft werden. Echte CUDA-Modellgenerierung, VRAM-Verbrauch, Renderzeit und sichtbare Motivqualität benötigen anschließend den kurzen Test auf dem RTX-PC.
+Die korrigierte Windows-EXE muss im nativen Workflow noch gebaut und gestartet werden. CUDA-Modellgenerierung, VRAM-Verbrauch, Renderzeit und sichtbare Motivqualität benötigen einen Lauf auf dem RTX-PC.
 
 Die Engine in den Auftragstests erzeugt ausdrücklich synthetische Testbilder. Das ist kein KI-Inferenzbeleg. Der frühere Linux-Einzelbildtest verwendete eine andere, für den Mac festgeschriebene Engine-Revision und ersetzt keinen Windows/CUDA-Videotest.
 
