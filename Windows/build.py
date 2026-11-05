@@ -54,7 +54,7 @@ def build():
         archive=download_checked(asset['url'],cache/asset['name'],asset['sha256'],Cancellation())
         extract_checked(archive,unpack/asset['name'].removesuffix('.zip'))
     ico=ROOT/'aven.ico'
-    with Image.open(ROOT.parent/'Assets/AVEN.iconset/icon_256x256.png') as im: im.save(ico,format='ICO')
+    with Image.open(ROOT/'assets/aven-icon.png') as im: im.save(ico,format='ICO')
     subprocess.run([sys.executable,'-m','PyInstaller','--noconfirm','--clean','--onedir','--windowed',
                     '--name','AVEN Video AI','--icon',str(ico),'--add-data',str(ROOT/'aven/weights.json')+':aven',
                     '--distpath',str(ROOT/'dist'),'--workpath',str(ROOT/'build'),'--specpath',str(ROOT),str(ROOT/'main.py')],cwd=ROOT,check=True)

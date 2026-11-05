@@ -1,6 +1,6 @@
 # AVEN Video AI 3.5 – Windows CUDA
 
-Windows-Version des vorhandenen AVEN-Projekts, ausgelegt für deinen Windows-11-PC mit RTX 3080 10 GB und 128 GB RAM. Die Mac-App bleibt als eigene Version im Repository erhalten.
+AVEN wird derzeit ausschließlich für Windows 11 x64 mit NVIDIA CUDA entwickelt. Zielhardware: RTX 3080 mit 10 GB VRAM und 128 GB RAM.
 
 ## Sprache umschalten
 
@@ -41,7 +41,7 @@ Modelle und Aufträge: `%LOCALAPPDATA%\AVEN Video AI\Models` und `%LOCALAPPDATA%
 
 ## Qualität und Hardware
 
-Stufen 1–7 entsprechen den Mac-Profilen: 480p, Q4/UMT5 Q3, 20–36 Schritte. Stufen 8–10: höhere Auflösung, Q8/UMT5 Q5, 40–50 Schritte. Höhere Stufen benötigen zusätzliche Modellgewichte und können 10 GB VRAM überschreiten.
+Stufen 1–7: 480p, Q4/UMT5 Q3, 20–36 Schritte. Stufen 8–10: höhere Auflösung, Q8/UMT5 Q5, 40–50 Schritte. Höhere Stufen benötigen zusätzliche Modellgewichte und können 10 GB VRAM überschreiten.
 
 Diffusion läuft ausdrücklich auf **CUDA0**, Textencoder und VAE auf CPU/RAM. Standardmäßig liegen auch die Diffusionsgewichte im Arbeitsspeicher und werden segmentweise zur RTX übertragen. Auf einer 10-GB-Karte wird ein verwaltetes CUDA-Budget von 8 GiB gesetzt; zwei GiB sind als Reserve eingeplant. Das ist kein harter physischer Grenzwert und garantiert nicht, dass jedes Profil passt. **Diffusionsgewichte dauerhaft im VRAM halten** ist ein Vergleichsprofil für den gleichen kurzen Test, ohne Auflösung, Schritte oder Bilderzahl zu ändern. Das nutzt die RTX für die zentrale Modellberechnung und entlastet den Grafikspeicher. Fehlendes CUDA führt zu einer verständlichen Fehlermeldung, nicht zu einem stillen CPU-Ersatz oder einer schlechteren Qualitätsstufe. 128 GB RAM ersetzen die 10 GB Grafikspeicher nicht. Ergebnisse verschiedener Backends sind nicht garantiert pixelgleich.
 

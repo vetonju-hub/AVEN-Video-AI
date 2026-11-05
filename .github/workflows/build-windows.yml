@@ -2,9 +2,9 @@ name: AVEN Windows CUDA
 on:
   push:
     branches: [main, "fix/**"]
-    paths: ["Windows/**", ".github/workflows/build-windows.yml", "Assets/**"]
+    paths: ["Windows/**", ".github/workflows/build-windows.yml"]
   pull_request:
-    paths: ["Windows/**", ".github/workflows/build-windows.yml", "Assets/**"]
+    paths: ["Windows/**", ".github/workflows/build-windows.yml"]
   workflow_dispatch:
 permissions:
   contents: read

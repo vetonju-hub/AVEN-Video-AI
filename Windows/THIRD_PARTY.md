@@ -10,4 +10,4 @@ AVEN's Python/Tk frontend invokes separate executables. Preserve this directory 
 - Pillow 11.3.0: HPND, https://github.com/python-pillow/Pillow/tree/11.3.0 .
 - PyInstaller 6.16.0: GPL with bootloader exception, https://pyinstaller.org/en/v6.16.0/license.html .
 
-Model weights are not bundled. Pinned source URLs and SHA256 values are in `aven/weights.json`, retained from the Mac project. Wan2.1 is published under Apache-2.0; text encoder and repackaged-weight license information is available on the linked model repositories.
+Model weights are not bundled. Pinned source URLs and SHA256 values are in `aven/weights.json`, maintained for the Windows project. Wan2.1 is published under Apache-2.0; text encoder and repackaged-weight license information is available on the linked model repositories.

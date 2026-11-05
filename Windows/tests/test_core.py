@@ -12,7 +12,7 @@ from aven.models import verify_file
 
 
 class PolicyTests(unittest.TestCase):
-    def test_profiles_match_mac_quality(self):
+    def test_windows_cuda_quality_profiles(self):
         for level, steps in enumerate([20,22,24,26,28,32,36,40,44,50], 1):
             for fmt, dims in [('16:9',(832,480)),('9:16',(480,832)),('1:1',(640,640))]:
                 p = Plan.make(level, fmt, cores=56)

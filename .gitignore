@@ -1,3 +1,11 @@
 .superpowers/
 dist/
-*.dSYM/
+__pycache__/
+*.py[cod]
+*.spec
+Windows/.cache/
+Windows/build/
+Windows/dist/
+Windows/engine/
+Windows/build-dependencies/
+Windows/packaged-smoke/

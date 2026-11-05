@@ -1,97 +1,0 @@
-[V] version: stable-diffusion.cpp version unknown, commit d308544 --- main.cpp:694
-[V] System Info: 
-   SSE3 = 1 |    SSSE3 = 1 |    AVX = 1 |    AVX2 = 1 |    F16C = 1 |    FMA = 1 |    BMI2 = 1 |    OPENMP = 1 |    REPACK = 1 |  --- main.cpp:695
-[V] using 4 threads for model loading --- model_loader.cpp:194
-[I] loading diffusion model from 'inference-models/wan-v3-q4.gguf' --- diffusion_engine.cpp:692
-[I] load inference-models/wan-v3-q4.gguf using gguf format --- model_loader.cpp:220
-[V] init from 'inference-models/wan-v3-q4.gguf' --- model_loader.cpp:266
-[V] GGUF v3, tensor_count=1264, metadata_kv_count=3 --- gguf_reader_ext.h:224
-[I] loading t5xxl from 'inference-models/umt5-q3-parallel.gguf' --- diffusion_engine.cpp:734
-[I] load inference-models/umt5-q3-parallel.gguf using gguf format --- model_loader.cpp:220
-[V] init from 'inference-models/umt5-q3-parallel.gguf' --- model_loader.cpp:266
-[V] GGUF v3, tensor_count=242, metadata_kv_count=30 --- gguf_reader_ext.h:224
-[I] loading vae from 'inference-models/vae-test.safetensors' --- diffusion_engine.cpp:763
-[I] load inference-models/vae-test.safetensors using safetensors format --- model_loader.cpp:226
-[V] init from 'inference-models/vae-test.safetensors', prefix = 'vae.' --- model_loader.cpp:294
-[I] Version: Wan 2.x  --- diffusion_engine.cpp:975
-[V] Initializing backend: CPU --- ggml_extend_backend.cpp:420
-[V] using 4 threads for model loading --- model_loader.cpp:194
-[I] Weight type stat:                      f32: 870  |     f16: 1    |    q4_0: 421  |    q4_1: 45   |    q3_K: 168  |    q6_K: 1    |    bf16: 194   --- diffusion_engine.cpp:1548
-[I] Conditioner weight type stat:          f32: 73   |    q3_K: 168  |    q6_K: 1     --- diffusion_engine.cpp:1549
-[I] Diffusion model weight type stat:      f32: 797  |     f16: 1    |    q4_0: 421  |    q4_1: 45    --- diffusion_engine.cpp:1550
-[I] VAE weight type stat:                 bf16: 194   --- diffusion_engine.cpp:1551
-[V] wan: model_type = t2v, num_layers = 30, vace_layers = 15, dim = 2048, ffn_dim = 8192, num_heads = 16 --- wan.hpp:92
-[I] Wan2.1-VACE-1.3B --- wan.hpp:969
-[I] using VAE for encoding / decoding --- model_builders.cpp:210
-[V] Wan VAE convolution type: 3D --- wan_vae.hpp:1343
-[I] flash attention auto: CPU -> on (CPU) --- flash_attn.cpp:66
-[I] conv2d direct auto: CPU -> off (no implicit GEMM path) --- conv_direct.cpp:90
-[I] conv3d direct auto: CPU -> off (no implicit GEMM path) --- conv_direct.cpp:90
-[V] validating model metadata --- diffusion_engine.cpp:1307
-[V] model metadata validated; weights will be prepared lazily --- diffusion_engine.cpp:1377
-[I] total params memory size = 4245.77MB (VRAM 0.00MB, RAM 4245.77MB): text_encoders 2720.00MB(RAM), diffusion_model 1283.68MB(RAM), vae 242.10MB(RAM), controlnet 0.00MB(N/A), extensions 0.00MB(N/A) --- diffusion_engine.cpp:1423
-[I] running in FLOW mode --- diffusion_engine.cpp:1478
-[V] using 4 threads for model loading --- model_loader.cpp:194
-[I] get_sigmas with discrete scheduler --- denoiser.hpp:1129
-[I] sampling using Euler method --- request.cpp:477
-[I] VACE --- video.cpp:1057
-[V] VAE encode tile size: 256x256 pixels (32x32 latent) --- vae.hpp:279
-[V] num tiles : 5, 2  --- tiling.cpp:178
-[V] processing 10 tiles --- tiling.cpp:179
-[I] wan_vae build cached graph cut plan done (taking 1 ms) --- ggml_graph_cut.cpp:1032
-[V] loading 82/194 tensors from inference-models/vae-test.safetensors --- model_loader.cpp:1156
-  |#                                                 |  1/82 -   0.00MB/s[K  |##################################################| 82/82 - 503.34MB/s[K
-[I] loading tensors completed, taking 0.20s (read: 0.00s, memcpy: 0.00s, convert: 0.08s, copy_to_backend: 0.00s) --- model_loader.cpp:1426
-[V] model manager prepared params backend buffers (101.20 MB, 82 tensors, 1 blocks, RAM) on CPU --- model_manager.cpp:492
-[V] wan_vae compute buffer size: 482.29 MB(RAM) on CPU (peak across 1 segment) --- ggml_runner.cpp:1065
-  |=====>                                            |  1/10 -   6.95s/it - ETA 01:02[K  |==========>                                       |  2/10 -   6.00s/it - ETA 00:51[K  |===============>                                  |  3/10 -   5.73s/it - ETA 00:43[K  |====================>                             |  4/10 -   6.12s/it - ETA 00:37[K  |=========================>                        |  5/10 -   7.20s/it - ETA 00:31[K  |==============================>                   |  6/10 -   8.01s/it - ETA 00:26[K  |===================================>              |  7/10 -   8.04s/it - ETA 00:20[K  |========================================>         |  8/10 -   8.04s/it - ETA 00:14[K  |=============================================>    |  9/10 -   8.01s/it - ETA 00:07[K  |==================================================| 10/10 -   8.07s/it[K
-[V] computing vae encode graph completed, taking 72.18s --- vae.hpp:310
-[V] VAE encode tile size: 256x256 pixels (32x32 latent) --- vae.hpp:279
-[V] num tiles : 5, 2  --- tiling.cpp:178
-[V] processing 10 tiles --- tiling.cpp:179
-[V] wan_vae compute buffer size: 482.29 MB(RAM) on CPU (peak across 1 segment) --- ggml_runner.cpp:1065
-  |=====>                                            |  1/10 -   8.15s/it - ETA 01:13[K  |==========>                                       |  2/10 -   7.99s/it - ETA 01:04[K  |===============>                                  |  3/10 -   7.99s/it - ETA 00:56[K  |====================>                             |  4/10 -   7.94s/it - ETA 00:48[K  |=========================>                        |  5/10 -   6.86s/it - ETA 00:38[K  |==============================>                   |  6/10 -   5.96s/it - ETA 00:29[K  |===================================>              |  7/10 -   5.97s/it - ETA 00:21[K  |========================================>         |  8/10 -   5.90s/it - ETA 00:14[K  |=============================================>    |  9/10 -   5.87s/it - ETA 00:06[K  |==================================================| 10/10 -   5.44s/it[K
-[V] computing vae encode graph completed, taking 68.10s --- vae.hpp:310
-[I] encode_first_stage completed, taking 140313 ms --- video.cpp:1128
-[V] parse 'A ginger cat sitting on a wooden table in a sunlit room. Sharp focus, natural colors, static camera.' to [['A ginger cat sitting on a wooden table in a sunlit room. Sharp focus, natural colors, static camera.', 1], ] --- conditioner.hpp:1509
-[V] split prompt "A ginger cat sitting on a wooden table in a sunlit room. Sharp focus, natural colors, static camera." to tokens ["▁A", "▁ging", "er", "▁cat", "▁sitting", "▁on", "▁a", "▁wooden", "▁table", "▁in", "▁a", "▁sun", "lit", "▁room", ".", "▁Sharp", "▁focus", ",", "▁natural", "▁colors", ",", "▁static", "▁camera", ".", ] --- t5_unigram_tokenizer.cpp:346
-[I] t5 build cached graph cut plan done (taking 2 ms) --- ggml_graph_cut.cpp:1032
-[V] loading 242/242 tensors from inference-models/umt5-q3-parallel.gguf --- model_loader.cpp:1156
-  |#############################                     | 138/242 -   5.04GB/s[K  |##################################################| 242/242 -   2.31GB/s[K
-[I] loading tensors completed, taking 1.15s (read: 0.57s, memcpy: 0.00s, convert: 0.00s, copy_to_backend: 0.00s) --- model_loader.cpp:1426
-[V] model manager prepared params backend buffers (2720.00 MB, 242 tensors, 1 blocks, RAM) on CPU --- model_manager.cpp:492
-[V] t5 compute buffer size: 297.00 MB(RAM) on CPU (peak across 1 segment) --- ggml_runner.cpp:1065
-[V] computing condition graph completed, taking 20127 ms --- conditioner.hpp:1605
-[V] parse 'blurry, noise, low quality, deformed anatomy, text, watermark' to [['blurry, noise, low quality, deformed anatomy, text, watermark', 1], ] --- conditioner.hpp:1509
-[V] split prompt "blurry, noise, low quality, deformed anatomy, text, watermark" to tokens ["▁blu", "rry", ",", "▁noise", ",", "▁low", "▁quality", ",", "▁de", "formed", "▁a", "natomy", ",", "▁text", ",", "▁water", "mark", ] --- t5_unigram_tokenizer.cpp:346
-[V] computing condition graph completed, taking 23817 ms --- conditioner.hpp:1605
-[I] get_learned_condition completed, taking 43.95s --- video.cpp:1259
-[I] generate_video 832x480x1 --- video.cpp:1676
-[V] sample 104x60x1 --- video.cpp:1742
-[I] Wan2.1-VACE-1.3B build cached graph cut plan done (taking 9 ms) --- ggml_graph_cut.cpp:1032
-[V] loading 1264/1264 tensors from inference-models/wan-v3-q4.gguf --- model_loader.cpp:1156
-  |########                                          |  181/1264 - 757.20MB/s[K  |######################                            |  553/1264 -   1.25GB/s[K  |#########################################         | 1028/1264 -   1.61GB/s[K  |##################################################| 1264/1264 -   1.56GB/s[K
-[I] loading tensors completed, taking 0.80s (read: 0.69s, memcpy: 0.00s, convert: 0.00s, copy_to_backend: 0.00s) --- model_loader.cpp:1426
-[V] model manager prepared params backend buffers (1283.68 MB, 1264 tensors, 1 blocks, RAM) on CPU --- model_manager.cpp:492
-[V] Wan2.1-VACE-1.3B compute buffer size: 102.07 MB(RAM) on CPU (peak across 1 segment) --- ggml_runner.cpp:1065
-  |==>                                               |  1/20 - 115.01s/it - ETA 36:25[K  |=====>                                            |  2/20 - 113.25s/it - ETA 34:14[K  |=======>                                          |  3/20 - 113.64s/it - ETA 32:17[K  |==========>                                       |  4/20 - 114.40s/it - ETA 30:25[K  |============>                                     |  5/20 - 113.51s/it - ETA 28:29[K  |===============>                                  |  6/20 - 113.96s/it - ETA 26:35[K  |=================>                                |  7/20 - 113.77s/it - ETA 24:41[K  |====================>                             |  8/20 - 113.12s/it - ETA 22:45[K  |======================>                           |  9/20 - 112.77s/it - ETA 20:50[K  |=========================>                        | 10/20 - 112.13s/it - ETA 18:55[K  |===========================>                      | 11/20 - 112.95s/it - ETA 17:01[K  |==============================>                   | 12/20 - 112.60s/it - ETA 15:07[K  |================================>                 | 13/20 - 112.76s/it - ETA 13:13[K  |===================================>              | 14/20 - 112.57s/it - ETA 11:19[K  |=====================================>            | 15/20 - 113.11s/it - ETA 09:26[K  |========================================>         | 16/20 - 112.97s/it - ETA 07:33[K  |==========================================>       | 17/20 - 113.46s/it - ETA 05:39[K  |=============================================>    | 18/20 - 112.83s/it - ETA 03:46[K  |===============================================>  | 19/20 - 113.16s/it - ETA 01:53[K  |==================================================| 20/20 - 112.67s/it[K
-[I] sampling completed, taking 2264.67s --- video.cpp:1776
-[I] generating latent video completed, taking 2264.67s --- video.cpp:1920
-[V] decode_video_outputs latent 104x60x1x16 --- video.cpp:1281
-[V] VAE decode tile size: 256x256 pixels (32x32 latent) --- vae.hpp:347
-[V] num tiles : 5, 2  --- tiling.cpp:178
-[V] processing 10 tiles --- tiling.cpp:179
-[I] wan_vae build cached graph cut plan done (taking 1 ms) --- ggml_graph_cut.cpp:1032
-[V] loading 104/194 tensors from inference-models/vae-test.safetensors --- model_loader.cpp:1156
-  |##################################################| 104/104 - 675.36MB/s[K
-[I] loading tensors completed, taking 0.20s (read: 0.01s, memcpy: 0.00s, convert: 0.07s, copy_to_backend: 0.00s) --- model_loader.cpp:1426
-[V] model manager prepared params backend buffers (136.46 MB, 104 tensors, 1 blocks, RAM) on CPU --- model_manager.cpp:492
-[V] wan_vae compute buffer size: 469.19 MB(RAM) on CPU (peak across 1 segment) --- ggml_runner.cpp:1065
-  |=====>                                            |  1/10 -  10.02s/it - ETA 01:30[K  |==========>                                       |  2/10 -   9.53s/it - ETA 01:18[K  |===============>                                  |  3/10 -   9.50s/it - ETA 01:07[K  |====================>                             |  4/10 -   9.53s/it - ETA 00:57[K  |=========================>                        |  5/10 -   9.48s/it - ETA 00:48[K  |==============================>                   |  6/10 -   9.49s/it - ETA 00:38[K  |===================================>              |  7/10 -   9.52s/it - ETA 00:28[K  |========================================>         |  8/10 -   9.51s/it - ETA 00:19[K  |=============================================>    |  9/10 -   9.46s/it - ETA 00:09[K  |==================================================| 10/10 -   7.07s/it[K
-[V] computing vae decode graph completed, taking 93.14s --- vae.hpp:384
-[I] decode_first_stage completed, taking 93.14s --- video.cpp:1290
-[V] decode_video_outputs decoded 832x480x1x3 --- video.cpp:1295
-[I] generate_video completed in 2542.08s --- video.cpp:2008
-[V] model manager released params backend buffers (4241.34 MB, 1692 tensors, 4 blocks, RAM) from CPU --- model_manager.cpp:1297
-[I] save result image 0 to 'inference-check/generated_000.png' (success) --- main.cpp:495
-[I] 1/1 images saved --- main.cpp:528

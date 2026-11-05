@@ -12,7 +12,7 @@ Zielsystem ist Windows 11 x64 mit RTX 3080 (10 GB) und 128 GB RAM.
 - Gesicherte Referenzen, Integritätsprüfung und unterbrochene Aufträge mit vollständigen Szenen: Fortsetzen erhält deren Dateien.
 - Regression eines ausgetauschten 64×64-Videocaches bei angeforderten 832×480: erkannt und aus den geprüften Originalbildern rekonstruiert, ohne neuen Modelllauf. Clipauflösung, Bildrate, Codec, Bildanzahl, Dauer und gespeicherte SHA256 werden geprüft.
 - Download-Prüfsummen, keine Veröffentlichung beschädigter Archive, Archivpfade mit Traversal/Windows-Laufwerken und Kollisionen geprüft.
-- Python-Syntax aller Windows-Dateien; bestehende Paket-/Shell-/Workflowprüfungen: vier bestanden, Swift-Compilerprüfung mangels Compiler übersprungen.
+- Python-Syntax der Windows-Dateien und Windows-Pakettests wurden geprüft.
 - Die Fortsetzungstests prüfen die vier Referenzbilder, Originalbild und Originalton am Anfang, Musik im neuen Teil, Dauer und Abbruch mit anschließendem Fortsetzen. Der Auftrag behält seinen Avatar auch nach Austausch des Profilbildes. Zusätzliche Tests decken kurze Hochkantclips sowie SDR- und HDR-Import ab.
 
 ## Neue Studio-Funktionen geprüft
@@ -33,11 +33,11 @@ Der letzte native Windows-Lauf bestand 48 Tests und erzeugte die EXE. Beim Start
 
 Die korrigierte Windows-EXE muss im nativen Workflow noch gebaut und gestartet werden. CUDA-Modellgenerierung, VRAM-Verbrauch, Renderzeit und sichtbare Motivqualität benötigen einen Lauf auf dem RTX-PC.
 
-Die Engine in den Auftragstests erzeugt ausdrücklich synthetische Testbilder. Das ist kein KI-Inferenzbeleg. Der frühere Linux-Einzelbildtest verwendete eine andere, für den Mac festgeschriebene Engine-Revision und ersetzt keinen Windows/CUDA-Videotest.
+Die Engine in den Auftragstests erzeugt ausdrücklich synthetische Testbilder. Das ist kein KI-Inferenzbeleg. Ein früherer Linux-Einzelbildtest verwendete eine andere Engine-Revision und ersetzt keinen Windows/CUDA-Videotest.
 
 ## Entscheidungen
 
-Die zusätzliche Windows-Oberfläche verwendet Tk/ttk und Pillow. Sie unterscheidet sich optisch von SwiftUI und wird gemeinsam mit dem Python-Laufzeitsystem in eine portable App gepackt; Endnutzer benötigen keine Python-Installation. Die offizielle Windows-CUDA12-Engine ist auf `master-1043-3be2378` festgeschrieben, ihre Archive und das FFmpeg-Archiv auf veröffentlichte SHA256. Diese Engine-Revision ist eigenständig gegenüber dem Mac zu prüfen.
+Die Windows-Oberfläche verwendet Tk/ttk und Pillow und wird gemeinsam mit dem Python-Laufzeitsystem in eine portable App gepackt; Endnutzer benötigen keine Python-Installation. Die offizielle Windows-CUDA12-Engine ist auf `master-1043-3be2378` festgeschrieben, ihre Archive und das FFmpeg-Archiv auf veröffentlichte SHA256. Diese Engine-Revision muss im Windows/CUDA-Betrieb geprüft werden.
 
 ## Nächster Nachweis
 
