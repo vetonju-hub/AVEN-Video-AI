@@ -55,7 +55,7 @@ cp "$BUILD_TMP/stable-diffusion.cpp/ggml/LICENSE" "$APP/Contents/Resources/AIEng
 # Contract checks only: executing --help is not a neural generation test.
 "$APP/Contents/Resources/AIEngine/sd-cli" --version > "$APP/Contents/Resources/AIEngine/version.txt"
 "$APP/Contents/Resources/AIEngine/sd-cli" --help > "$BUILD_TMP/sd-cli-help.txt" 2>&1
-for flag in vid_gen video-frames fps flow-shift scheduler backend auto-fit vae-tile-size temporal-tiling; do
+for flag in vid_gen video-frames fps flow-shift scheduler backend auto-fit vae-tile-size temporal-tiling control-video; do
   if ! grep -q -- "$flag" "$BUILD_TMP/sd-cli-help.txt"; then
     echo "ERROR: Required engine argument missing: $flag" >&2; exit 1
   fi

@@ -110,15 +110,21 @@ class MediaTests(unittest.TestCase):
 
     def test_continuation_normalizes_source_colors(self):
         plan=Plan.make(1,'16:9'); cancel=Cancellation()
-        for mode,color_args in [('sdr',['-colorspace','smpte170m']),
-                                ('hdr',['-color_trc','smpte2084','-pix_fmt','yuv420p10le'])]:
+        fixtures = [
+            ('sdr', 'setparams=colorspace=smpte170m', ['-colorspace','smpte170m'], 'color_space', 'smpte170m'),
+            ('hdr', 'format=yuv420p10le,setparams=color_trc=smpte2084',
+             ['-color_trc','smpte2084','-pix_fmt','yuv420p10le'], 'color_transfer', 'smpte2084'),
+        ]
+        for mode, color_filter, color_args, color_key, color_value in fixtures:
             with self.subTest(mode=mode):
                 source=self.root/f'{mode}.mp4'; output=self.root/f'{mode}-normalized.mp4'
                 run([binary('ffmpeg'),'-v','error','-f','lavfi','-i','color=c=red:s=160x90:r=16:d=0.25',
-                     '-c:v','libx264',*color_args,source])
+                     '-vf',color_filter,'-c:v','libx264',*color_args,source])
+                self.assertEqual(probe(source)['streams'][0].get(color_key), color_value)
                 prepare_source_video(source,output,self.root/'source.flac',plan,cancel)
                 video=probe(output)['streams'][0]
-                self.assertEqual((video['color_space'],video['color_transfer'],video['pix_fmt']),('bt709','bt709','yuv420p'))
+                self.assertEqual((video['color_space'],video['color_primaries'],video['color_transfer'],video['pix_fmt']),
+                                 ('bt709','bt709','bt709','yuv420p'))
                 if mode=='sdr':
                     control=self.root/'control'; write_control_video(output,control,plan.fps,cancel)
                     with Image.open(control/'frame_003.png') as image:

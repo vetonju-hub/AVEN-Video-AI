@@ -22,6 +22,7 @@ struct PolicyTests {
             precondition(value("--cfg-scale") == "5.0" && value("--steps") == String(a.steps))
             precondition(value("-p") == "a cat; $(literal)" && value("--seed") == "42")
             precondition(value("-i") == "/with spaces/ref.png" && value("--scheduler") == "discrete")
+            precondition(value("--video-frames") == "33" && !args.contains("--control-video"))
             precondition(!args.contains("disk"), "Don't force untested disk streaming")
         }
         let songLength = try VideoTiming.resolve(manual: 2, music: 301.375, matchMusic: true)
@@ -45,6 +46,13 @@ struct PolicyTests {
         precondition(!published, "Cancellation queued before result publication must win")
         let liveGate = RenderCancellation()
         precondition(liveGate.commitIfActive { published = true } && published)
+        enum PublicationError: Error { case moveFailed }
+        do {
+            _ = try liveGate.commitIfActive { throw PublicationError.moveFailed }
+            fatalError("Publication must propagate a file move failure")
+        } catch PublicationError.moveFailed { }
+        let movedAfterCancel = try gate.commitIfActive { throw PublicationError.moveFailed }
+        precondition(!movedAfterCancel, "Cancellation must skip a file move")
         let legacyFrameCount = try VideoTiming.frameCount(seconds: 5.375, fps: 12)
         precondition(legacyFrameCount == 65, "Fractional music needs a final partial video frame")
         let files = ["generated_010.png", "reference.png", "generated_002.png", "generated_001.png", "generated_000.png"]
@@ -53,6 +61,37 @@ struct PolicyTests {
         precondition(ordered.map(\.lastPathComponent) == ["generated_000.png", "generated_001.png", "generated_002.png"])
         let plan = AVENQualityPlan.make(for: intel, level: 5, portrait: false, fullPower: false)
         precondition(VideoTiming.sceneCount(seconds: 301.375, clipSeconds: plan.clipSeconds) == 147)
+        let continuation = AIJobManifest(version: 5, prompt: "The cat jumps", negativePrompt: nil, seed: 42,
+            targetSeconds: 4, plan: CodablePlan(plan), format: "16:9", referenceName: nil,
+            referenceNames: ["reference_000.png", "reference_001.png"], soundtrackPath: nil,
+            avatarName: "avatar.png", sourceVideoName: "source-video.mov", completed: 0, created: Date())
+        let restored = try JSONDecoder().decode(AIJobManifest.self, from: JSONEncoder().encode(continuation))
+        precondition(restored.isSupported && restored.totalScenes == 2)
+        precondition(restored.controlSource(at: 0) == "source-video.mov")
+        precondition(restored.controlSource(at: 1) == "scene_001/clip.mp4")
+        precondition(restored.reference(at: 0) == "avatar.png" && restored.reference(at: 1) == "avatar.png")
+        let continuedArgs = try GenerationPolicy.arguments(plan: restored.plan, prompt: restored.prompt, negativePrompt: "blur",
+            seed: 42, model: "wan.gguf", textEncoder: "t5.gguf", vae: "vae.safetensors",
+            reference: restored.reference(at: 1), output: "generated_%03d.png", controlVideo: "/with spaces/control")
+        precondition(continuedArgs[continuedArgs.firstIndex(of: "--video-frames")! + 1] == "37")
+        precondition(continuedArgs[continuedArgs.firstIndex(of: "--control-video")! + 1] == "/with spaces/control")
+        precondition(continuedArgs[continuedArgs.firstIndex(of: "-i")! + 1] == "avatar.png")
+        let modelFrames = (0..<37).reversed().map { URL(fileURLWithPath: String(format: "generated_%03d.png", $0)) }
+        let appended = try GeneratedFrameSet.ordered(files: modelFrames, expectedCount: restored.modelFrameCount,
+            droppingFirst: restored.contextFrameCount)
+        precondition(appended.count == 33 && appended.first?.lastPathComponent == "generated_004.png")
+        precondition(appended.last?.lastPathComponent == "generated_036.png")
+        do {
+            _ = try GeneratedFrameSet.ordered(files: Array(modelFrames.dropLast()), expectedCount: 37, droppingFirst: 4)
+            fatalError("missing control-prefix frame accepted")
+        } catch { }
+        let legacy = AIJobManifest(version: 4, prompt: "The cat jumps", negativePrompt: nil, seed: 42,
+            targetSeconds: 4, plan: CodablePlan(plan), format: "16:9", referenceName: nil,
+            referenceNames: ["reference_000.png", "reference_001.png"], soundtrackPath: nil,
+            avatarName: nil, sourceVideoName: nil, completed: 0, created: Date())
+        let oldJob = try JSONDecoder().decode(AIJobManifest.self, from: JSONEncoder().encode(legacy))
+        precondition(oldJob.isSupported && oldJob.modelFrameCount == 33 && oldJob.controlSource(at: 1) == nil)
+        precondition(oldJob.reference(at: 1) == "reference_001.png", "Existing jobs still rotate photo references")
         let validPNG = Data(base64Encoded: "iVBORw0KGgoAAAANSUhEUgAAAAIAAAACCAIAAAD91JpzAAAAEklEQVR4nGP4z8DAAMIM/4EAAB/uBfsL2WiLAAAAAElFTkSuQmCC")!
         try PNGIntegrity.validate(validPNG)
         do { try PNGIntegrity.validate(Data(validPNG.dropLast(12))); fatalError("PNG without IEND accepted") } catch { }

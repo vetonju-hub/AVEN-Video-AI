@@ -51,6 +51,16 @@ struct MediaTests {
         let corrupt = folder.appendingPathComponent("bad.png")
         try Data("not a png".utf8).write(to: corrupt)
         do { _ = try FrameValidation.inspect(frames: [corrupt], width: w, height: h); fatalError("corrupt image accepted") } catch { }
+        let avatar = folder.appendingPathComponent("Profile/avatar.png")
+        _ = try MediaImport.saveAvatar(from: rotatedJPEG, to: avatar)
+        let savedAvatar = try MediaImport.decodeImage(avatar)
+        precondition(savedAvatar.width == 32 && savedAvatar.height == 64)
+        do { _ = try MediaImport.saveAvatar(from: corrupt, to: avatar); fatalError("invalid avatar accepted") } catch { }
+        let unchangedAvatar = try MediaImport.decodeImage(avatar)
+        precondition(unchangedAvatar.width == 32 && unchangedAvatar.height == 64)
+        _ = try MediaImport.saveAvatar(from: frames[0], to: avatar)
+        let replacedAvatar = try MediaImport.decodeImage(avatar)
+        precondition(replacedAvatar.width == w && replacedAvatar.height == h)
         do { _ = try FrameValidation.inspect(frames: frames, width: 32, height: h); fatalError("wrong dimensions accepted") } catch { }
         let solid = folder.appendingPathComponent("solid.png")
         try MediaImport.writePNG(image(0, solid: true), to: solid)
@@ -134,6 +144,7 @@ struct MediaTests {
         let musicTrack = musicAsset.tracks(withMediaType: .audio).first!
         precondition(abs(musicTrack.timeRange.duration.seconds - audioDuration) < 0.08)
         try verifyTone(musicAsset, expectedSeconds: audioDuration)
+        try verifyContinuation(source: withMusic, controlSource: clip, folder: folder)
         let manual = folder.appendingPathComponent("manual-longer-than-song.mp4")
         try AIFrameEncoder.combine(clips: [clip, clip, clip], output: manual, limit: 6, soundtrack: audio, cancellation: RenderCancellation())
         let manualAsset = AVURLAsset(url: manual, options: [AVURLAssetPreferPreciseDurationAndTimingKey: true])
@@ -150,14 +161,110 @@ struct MediaTests {
             precondition(abs(vbr - expected) < 0.04, "VBR MP3 without Xing must use precise duration: \(vbr) vs \(expected)")
         }
         let duringEncode = RenderCancellation()
-        DispatchQueue.global().asyncAfter(deadline: .now() + 0.02) { duringEncode.cancel() }
         let interrupted = folder.appendingPathComponent("interrupted.mp4")
-        do { try AIFrameEncoder.encode(images: frames, fps: 16, output: interrupted, cancellation: duringEncode); fatalError("encoding cancellation ignored") } catch { }
+        var submittedFrames = 0
+        do {
+            // Cancel after a frame reaches the writer, regardless of encoder or runner speed.
+            try AIFrameEncoder.encode(images: frames, fps: 16, output: interrupted, cancellation: duringEncode) { count in
+                submittedFrames = count
+                if count == 1 { duringEncode.cancel() }
+            }
+            fatalError("encoding cancellation ignored")
+        } catch is RenderCancellation.Cancelled { }
+        precondition(submittedFrames == 1, "Cancellation must stop submission after the first frame")
         precondition(!FileManager.default.fileExists(atPath: interrupted.path), "No partial MP4 may be published")
         print("PASS: 33-frame PNG/MP4 roundtrip, colors/orientation, exact durations, reference extraction, corruption, cancellation, complete music")
     }
 
-    static func verifyTone(_ asset: AVAsset, expectedSeconds: Double) throws {
+    static func verifyContinuation(source: URL, controlSource: URL, folder: URL) throws {
+        let control = folder.appendingPathComponent("control", isDirectory: true)
+        let controlFrames = try MediaImport.writeContinuationFrames(from: controlSource, to: control, width: 128, height: 64,
+            fps: 16, cancellation: RenderCancellation())
+        let names = try FileManager.default.contentsOfDirectory(atPath: control.path).sorted()
+        precondition(names == ["frame_000.png", "frame_001.png", "frame_002.png", "frame_003.png"])
+        precondition(controlFrames.last?.lastPathComponent == "frame_003.png")
+        let tail = try MediaImport.decodeImage(control.appendingPathComponent(names[3]))
+        precondition(tail.width == 128 && tail.height == 64)
+        let tailPixels = try FrameValidation.lumaAndRGB(tail)
+        precondition(tailPixels.luma[32 * 128 + 12] < 16 && tailPixels.luma[32 * 128 + 64] > 30,
+            "The control frames must fit the original aspect ratio into the output canvas")
+        let landscape = CGSize(width: 128, height: 64)
+        let quarterTurn = CGAffineTransform(a: 0, b: 1, c: -1, d: 0, tx: 64, ty: 0)
+        let fit = try MediaImport.fittedTransform(naturalSize: landscape, preferredTransform: quarterTurn, canvas: landscape)
+        let fittedBounds = CGRect(origin: .zero, size: landscape).applying(fit)
+        precondition(fittedBounds == CGRect(x: 48, y: 0, width: 32, height: 64), "Fit the rotated display bounds")
+
+        let newPNG = folder.appendingPathComponent("new-blue.png")
+        let context = CGContext(data: nil, width: 128, height: 64, bitsPerComponent: 8, bytesPerRow: 512,
+            space: CGColorSpace(name: CGColorSpace.sRGB)!, bitmapInfo: CGImageAlphaInfo.premultipliedLast.rawValue)!
+        context.setFillColor(CGColor(red: 0.05, green: 0.05, blue: 0.9, alpha: 1))
+        context.fill(CGRect(x: 0, y: 0, width: 128, height: 64))
+        try MediaImport.writePNG(context.makeImage()!, to: newPNG)
+        let lastPNG = folder.appendingPathComponent("last-red.png")
+        context.setFillColor(CGColor(red: 0.9, green: 0.05, blue: 0.05, alpha: 1))
+        context.fill(CGRect(x: 0, y: 0, width: 128, height: 64))
+        try MediaImport.writePNG(context.makeImage()!, to: lastPNG)
+        let newClip = folder.appendingPathComponent("new-clip.mp4")
+        try AIFrameEncoder.encode(images: Array(repeating: newPNG, count: 74) + [lastPNG], fps: 60, output: newClip)
+        let fastControl = folder.appendingPathComponent("fast-control", isDirectory: true)
+        let fastFrames = try MediaImport.writeContinuationFrames(from: newClip, to: fastControl, width: 128, height: 64,
+            fps: 16, cancellation: RenderCancellation())
+        let fastTail = try FrameValidation.lumaAndRGB(MediaImport.decodeImage(fastFrames[3]))
+        let center = (32 * 128 + 64) * 3
+        precondition(fastTail.rgb[center] > 160 && fastTail.rgb[center + 2] < 80, "Capture the final frame of a 60 fps source")
+        let addedMusic = folder.appendingPathComponent("added-music.wav")
+        try writeWAV(seconds: 1.25, to: addedMusic, frequency: 660)
+        let edited = folder.appendingPathComponent("edited-source.mov")
+        try writeEditedSource(source, to: edited)
+        let editedSource = try MediaImport.continuationAsset(edited)
+        let sourceDuration = editedSource.range.duration.seconds
+        precondition(abs(editedSource.range.start.seconds - 0.1875) < 0.08 && abs(sourceDuration - 1.53) < 0.08,
+            "Use the visible video range of the edited source")
+        precondition(editedSource.asset.duration.seconds > editedSource.range.end.seconds + 1, "Fixture has an audio-only tail")
+        let result = folder.appendingPathComponent("original-and-generated.mp4")
+        let sourceBytes = try Data(contentsOf: edited)
+        try AIFrameEncoder.combine(clips: [newClip], output: result, limit: 1.25, soundtrack: addedMusic,
+            continuation: .init(source: edited, width: 128, height: 64, fps: 16))
+        let untouched = try Data(contentsOf: edited)
+        precondition(untouched == sourceBytes, "Export must not change the original")
+        let asset = AVURLAsset(url: result, options: [AVURLAssetPreferPreciseDurationAndTimingKey: true])
+        precondition(abs(asset.duration.seconds - (sourceDuration + 1.25)) < 0.08)
+        let originalFrame = try MediaImport.referenceFromVideo(result, seconds: 1)
+        let newFrame = try MediaImport.referenceFromVideo(result, seconds: sourceDuration + 0.5)
+        precondition(originalFrame.width == 128 && originalFrame.height == 64)
+        let oldPixels = try FrameValidation.lumaAndRGB(originalFrame)
+        let newPixels = try FrameValidation.lumaAndRGB(newFrame)
+        let edgePixel = 32 * 128 + 12
+        precondition(oldPixels.luma[edgePixel] < 16 && oldPixels.luma[32 * 128 + 64] > 30)
+        precondition(newPixels.rgb[edgePixel * 3 + 2] > 160, "Generated footage must follow the original")
+        let samples = try audioSamples(asset)
+        precondition(abs(Double(samples.count) / 16_000 - asset.duration.seconds) < 0.08)
+        let originalTone = Array(samples.dropFirst(4_000).prefix(16_000))
+        let addedTone = Array(samples.suffix(8_000))
+        precondition(abs(positiveCrossings(originalTone) - 440) < 8, "Keep the original audio before the cut")
+        precondition(abs(positiveCrossings(addedTone) - 330) < 10, "Play selected music over the addition")
+    }
+
+    static func writeEditedSource(_ input: URL, to output: URL) throws {
+        let asset = AVURLAsset(url: input)
+        let sourceVideo = asset.tracks(withMediaType: .video).first!
+        let sourceAudio = asset.tracks(withMediaType: .audio).first!
+        let edit = AVMutableComposition()
+        let video = edit.addMutableTrack(withMediaType: .video, preferredTrackID: kCMPersistentTrackID_Invalid)!
+        let audio = edit.addMutableTrack(withMediaType: .audio, preferredTrackID: kCMPersistentTrackID_Invalid)!
+        let videoRange = CMTimeRange(start: sourceVideo.timeRange.start, duration: CMTime(value: 918, timescale: 600))
+        try video.insertTimeRange(videoRange, of: sourceVideo, at: CMTime(value: 3, timescale: 16))
+        try audio.insertTimeRange(sourceAudio.timeRange, of: sourceAudio, at: .zero)
+        let exporter = AVAssetExportSession(asset: edit, presetName: AVAssetExportPresetPassthrough)!
+        exporter.outputURL = output
+        exporter.outputFileType = .mov
+        let done = DispatchSemaphore(value: 0)
+        exporter.exportAsynchronously { done.signal() }
+        precondition(done.wait(timeout: .now() + 30) == .success && exporter.status == .completed,
+            "Could not write offset source: \(String(describing: exporter.error))")
+    }
+
+    static func audioSamples(_ asset: AVAsset) throws -> [Float] {
         let reader = try AVAssetReader(asset: asset)
         let track = asset.tracks(withMediaType: .audio).first!
         let output = AVAssetReaderTrackOutput(track: track, outputSettings: [
@@ -176,16 +283,24 @@ struct MediaTests {
             data.withUnsafeBytes { decoded.append(contentsOf: $0.bindMemory(to: Float.self)) }
         }
         precondition(reader.status == .completed)
+        return decoded
+    }
+
+    static func positiveCrossings(_ samples: [Float]) -> Int {
+        zip(samples, samples.dropFirst()).filter { $0 <= 0 && $1 > 0 }.count
+    }
+
+    static func verifyTone(_ asset: AVAsset, expectedSeconds: Double) throws {
+        let decoded = try audioSamples(asset)
         precondition(abs(Double(decoded.count) / 16_000 - expectedSeconds) < 0.08)
         let tail = Array(decoded.suffix(800))
         let rms = sqrt(tail.map { Double($0 * $0) }.reduce(0,+) / Double(tail.count))
         precondition(rms > 0.03, "Audio content must reach the end")
         let middle = Array(decoded.dropFirst(16_000).prefix(16_000))
-        let positiveCrossings = zip(middle, middle.dropFirst()).filter { $0 <= 0 && $1 > 0 }.count
-        precondition(abs(positiveCrossings - 440) < 8, "Music pitch/speed changed")
+        precondition(abs(positiveCrossings(middle) - 440) < 8, "Music pitch/speed changed")
     }
 
-    static func writeWAV(seconds: Double, to url: URL) throws {
+    static func writeWAV(seconds: Double, to url: URL, frequency: Double = 440) throws {
         let rate = 16000
         let count = Int(seconds * Double(rate))
         var data = Data()
@@ -193,7 +308,7 @@ struct MediaTests {
         data.append(Data("RIFF".utf8)); word(UInt32(36 + count * 2)); data.append(Data("WAVEfmt ".utf8))
         word(UInt32(16)); word(UInt16(1)); word(UInt16(1)); word(UInt32(rate)); word(UInt32(rate * 2)); word(UInt16(2)); word(UInt16(16))
         data.append(Data("data".utf8)); word(UInt32(count * 2))
-        for i in 0..<count { word(Int16(sin(Double(i) * 2 * .pi * 440 / Double(rate)) * 5000)) }
+        for i in 0..<count { word(Int16(sin(Double(i) * 2 * .pi * frequency / Double(rate)) * 5000)) }
         try data.write(to: url)
     }
 }

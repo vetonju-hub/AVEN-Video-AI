@@ -15,7 +15,8 @@ from aven.gallery import list_projects, reference_path
 
 class JobTests(unittest.TestCase):
     def setUp(self):
-        self.tmp=tempfile.TemporaryDirectory(); self.root=Path(self.tmp.name)
+        self.tmp=tempfile.TemporaryDirectory()
+        self.root=Path(self.tmp.name).resolve()
         self.fake=self.root/'fake.py'
         self.fake.write_text('''import sys
 from pathlib import Path

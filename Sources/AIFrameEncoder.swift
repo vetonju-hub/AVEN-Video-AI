@@ -169,7 +169,7 @@ enum AIFrameEncoder {
                 throw GenerationError.invalid("Audiospur konnte nicht angelegt werden.")
             }
             if let source = originalAudio, let original = original {
-                let range = CMTimeRangeGetIntersection(source.timeRange, original.range)
+                let range = CMTimeRangeGetIntersection(source.timeRange, otherRange: original.range)
                 if range.duration.seconds > 0 {
                     let offset = CMTimeSubtract(range.start, original.range.start)
                     try audio.insertTimeRange(range, of: source, at: offset)

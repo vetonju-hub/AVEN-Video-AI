@@ -64,9 +64,9 @@ enum MediaImport {
             let start = first.timeMapping.target.start
             let end = last.timeMapping.target.end
             let visible = CMTimeRange(start: start, duration: CMTimeSubtract(end, start))
-            presentation = CMTimeRangeGetIntersection(presentation, visible)
+            presentation = CMTimeRangeGetIntersection(presentation, otherRange: visible)
         }
-        let range = CMTimeRangeGetIntersection(presentation, CMTimeRange(start: .zero, duration: duration))
+        let range = CMTimeRangeGetIntersection(presentation, otherRange: CMTimeRange(start: .zero, duration: duration))
         guard range.duration.seconds.isFinite, range.duration.seconds > 0 else {
             throw GenerationError.invalid("Das Video enthält keine abspielbaren Bilder: \(url.lastPathComponent)")
         }

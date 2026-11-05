@@ -12,6 +12,7 @@ from .runtime import Cancellation, binary, run
 from .policy import CONTINUATION_FRAMES, duration
 
 
+BT709_TAGS = 'setparams=color_primaries=bt709:color_trc=bt709:colorspace=bt709'
 H264_OUTPUT = ('-c:v','libx264','-preset','medium','-crf','17','-bf','0','-pix_fmt','yuv420p',
                '-color_primaries','bt709','-color_trc','bt709','-colorspace','bt709',
                '-video_track_timescale','48000','-movflags','+faststart')
@@ -53,7 +54,7 @@ def prepare_source_video(source, output, audio, plan, cancel):
                   'tonemap=tonemap=mobius,zscale=transfer=bt709:matrix=bt709:range=limited,')
     args=[binary('ffmpeg'),'-v','error','-xerror','-y','-filter_threads','2','-i',source,
           '-map','0:V:0','-an','-map_metadata','-1',
-          '-vf',filters+fit,*H264_OUTPUT,output]
+          '-vf',filters+fit+',format=yuv420p,'+BT709_TAGS,*H264_OUTPUT,output]
     if has_audio:
         args+=['-map','0:a:0','-vn','-map_metadata','-1','-af','aresample=48000:async=1:first_pts=0',
                '-c:a','flac','-ac','2',audio]
@@ -183,6 +184,7 @@ def encode_scene(frames, fps, output, cancel):
     try:
         run([binary('ffmpeg'),'-v','error','-y','-framerate',str(fps),'-start_number','0',
              '-i',Path(frames[0]).parent/'generated_%03d.png','-frames:v',str(len(frames)),
+             '-vf','scale=out_color_matrix=bt709,format=yuv420p,'+BT709_TAGS,
              *H264_OUTPUT,tmp],cancel)
         validate_clip(tmp,len(frames)/fps,cancel,len(frames),(w,h),fps)
         cancel.publish(lambda:os.replace(tmp,output))
