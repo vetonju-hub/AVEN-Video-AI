@@ -76,9 +76,24 @@ class MediaTests(unittest.TestCase):
         self.assertFalse(self.clip.exists())
 
     def test_vbr_music_without_duration_header(self):
-        fixtures=Path(__file__).resolve().parents[2]/'tests/Fixtures'
-        expected=float((fixtures/'vbr-duration.txt').read_text())
-        self.assertAlmostEqual(audio_duration(fixtures/'vbr-no-xing.mp3'),expected,delta=.04)
+        # Make the fixture here: no dependency on removed Mac test directories.
+        source=self.root/'vbr-no-xing-generated.mp3'
+        decoded=self.root/'vbr-decoded.pcm'
+        run([binary('ffmpeg'),'-v','error','-f','lavfi',
+             '-i','sine=frequency=440:sample_rate=44100',
+             '-t','5.407254','-c:a','libmp3lame','-q:a','3',
+             '-write_xing','0','-y',str(source)])
+        self.assertGreater(source.stat().st_size,500)
+        header=source.read_bytes()[:2048]
+        self.assertNotIn(b'Xing',header)
+        self.assertNotIn(b'Info',header)
+        # Independent reference: decoded PCM byte count, not MP3 header metadata.
+        run([binary('ffmpeg'),'-v','error','-i',str(source),'-map','0:a:0',
+             '-ac','1','-ar','44100','-f','s16le','-y',str(decoded)])
+        expected=decoded.stat().st_size/(2*44100)
+        self.assertGreater(expected,5.3)
+        self.assertLess(expected,5.6)
+        self.assertAlmostEqual(audio_duration(source),expected,delta=.001)
 
     def test_single_frame_portrait_clip_can_supply_four_context_frames(self):
         source=self.root/'portrait.mov'; output=self.root/'source.mp4'; audio=self.root/'source.flac'
