@@ -8,9 +8,25 @@ import subprocess
 import sys
 from PIL import Image
 from aven.bundle import download_checked, extract_checked
-from aven.runtime import Cancellation, run
+from aven.runtime import Cancellation, run, user_root
 
 ROOT=Path(__file__).resolve().parent
+
+
+def check_app(args, timeout):
+    # A --windowed executable has no stderr; main.py writes its traceback here.
+    # Remove the previous check's log so a failure can never report stale data.
+    error=user_root()/'app-error.log'
+    error.unlink(missing_ok=True)
+    print('Packaged check:', ' '.join(str(arg) for arg in args), flush=True)
+    try:
+        run(args,timeout=timeout)
+    except Exception as exc:
+        if error.is_file():
+            detail=error.read_text(encoding='utf-8',errors='replace')
+            raise RuntimeError(f'{exc}\nPackaged startup traceback ({error}):\n{detail}') from exc
+        raise
+    print('Packaged check passed.',flush=True)
 
 
 def build():
@@ -52,8 +68,8 @@ def build():
     shutil.copy2(ROOT/'THIRD_PARTY.md',notices/'SOURCES_AND_LICENSES.md')
     # Frozen subprocess self-tests use explicit bundled paths and no Python install.
     smoke=ROOT/'packaged-smoke'
-    run([app/'AVEN Video AI.exe','--self-test',smoke],timeout=300)
-    run([app/'AVEN Video AI.exe','--gui-smoke'],timeout=60)
+    check_app([app/'AVEN Video AI.exe','--self-test',smoke],timeout=300)
+    check_app([app/'AVEN Video AI.exe','--gui-smoke'],timeout=60)
     result=json.loads((smoke/'self-test.json').read_text())
     if result['synthetic_media']!='passed': raise RuntimeError('Paket-Medientest fehlgeschlagen.')
     (app/'package-check.json').write_text(json.dumps(result,indent=2))
